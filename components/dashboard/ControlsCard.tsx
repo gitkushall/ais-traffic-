@@ -23,8 +23,20 @@ export function ControlsCard({
   onSpawnEmergency,
   compact = false,
 }: ControlsCardProps) {
+  const totalWeight = controls.weights.density + controls.weights.wait + controls.weights.pedestrian;
+
   const setWeight = (key: keyof DashboardControlsSnapshot["weights"], value: number) => {
-    onSetWeights({ ...controls.weights, [key]: value });
+    const nextWeights = { ...controls.weights, [key]: value };
+    const nextTotal = nextWeights.density + nextWeights.wait + nextWeights.pedestrian;
+    if (nextTotal <= 0) {
+      onSetWeights(nextWeights);
+      return;
+    }
+    onSetWeights({
+      density: nextWeights.density / nextTotal,
+      wait: nextWeights.wait / nextTotal,
+      pedestrian: nextWeights.pedestrian / nextTotal,
+    });
   };
 
   return (
@@ -81,6 +93,7 @@ export function ControlsCard({
         {!compact ? (
           <div className="control-cluster">
             <span className="cluster-label">Adaptive scoring weights</span>
+            <p className="section-copy">Weights are applied live and normalized to a total of 1.00 so phase scoring changes immediately.</p>
             <div className="range-group">
               <label>
                 <span className="range-label-row">
@@ -124,6 +137,10 @@ export function ControlsCard({
                   value={controls.weights.pedestrian}
                 />
               </label>
+            </div>
+            <div className="metric-tile">
+              <span>Weight total</span>
+              <strong>{totalWeight.toFixed(2)}</strong>
             </div>
           </div>
         ) : null}

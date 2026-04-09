@@ -49,12 +49,25 @@ export class ScoringEngine {
       const queue = movementStates.reduce((sum, movement) => sum + movement.queue, 0);
       const wait = movementStates.reduce((sum, movement) => sum + movement.wait, 0) / Math.max(1, movementStates.length);
       const laneWait = laneStates.reduce((sum, lane) => sum + lane.waitingTime, 0) / Math.max(1, laneStates.length);
-      const starvationBonus = Math.min(1.35, laneWait / 55) * 0.28 + Math.min(0.9, queue / 14) * 0.18;
+      const queuePressure = Math.min(queue / 14, 1);
+      const waitPressure = Math.min(Math.max(wait, laneWait) / 55, 1);
+      const pedestrianPressure =
+        laneStates.reduce((sum, lane) => sum + Math.min(lane.pedestrianCount / 8, 1), 0) / Math.max(1, laneStates.length);
+      const weightedQueueBonus = queuePressure * this.weights.density * 0.75;
+      const weightedWaitBonus = waitPressure * this.weights.wait * 0.95;
+      const weightedPedestrianBonus = pedestrianPressure * this.weights.pedestrian * 0.7;
+      const adaptiveBonus = weightedQueueBonus + weightedWaitBonus + weightedPedestrianBonus;
       const emergencyBonus =
         emergency && phase.allowedMovements.includes(emergency.movementId)
           ? 4.2 + Math.max(0, 1.8 - emergency.distanceToStop / 140) + emergency.priorityScore
           : 0;
-      const total = baseTotal + starvationBonus + emergencyBonus;
+      const total = baseTotal + adaptiveBonus + emergencyBonus;
+      const dominantFactor =
+        weightedWaitBonus >= weightedQueueBonus && weightedWaitBonus >= weightedPedestrianBonus
+          ? "wait"
+          : weightedPedestrianBonus >= weightedQueueBonus
+            ? "pedestrian"
+            : "density";
       const phaseKey = phase.key;
       scores[phaseKey] = total;
       queues[phaseKey] = queue;
@@ -63,10 +76,10 @@ export class ScoringEngine {
         emergency && phase.allowedMovements.includes(emergency.movementId)
           ? `${phase.label}: ${emergency.type.replace("_", " ")} priority at ${emergency.distanceToStop.toFixed(0)}px`
           : queue > 8
-          ? `${phase.label}: queue pressure ${queue}`
+          ? `${phase.label}: ${dominantFactor} pressure driving ${queue} queued`
           : Math.max(wait, laneWait) > 10
-            ? `${phase.label}: wait pressure ${Math.max(wait, laneWait).toFixed(0)}s`
-            : `${phase.label}: balanced low demand`;
+            ? `${phase.label}: ${dominantFactor} pressure with ${Math.max(wait, laneWait).toFixed(0)}s wait`
+            : `${phase.label}: ${dominantFactor} weighted demand is leading`;
       if (total > bestScore) {
         bestScore = total;
         bestPhase = phase;

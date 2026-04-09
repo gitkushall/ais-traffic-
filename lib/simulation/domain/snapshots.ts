@@ -47,6 +47,7 @@ export type DashboardSnapshot = {
     stage: string;
     phaseScores: Array<{ key: string; score: number }>;
     emergencyServedCount: number;
+    pedestrianServedCount: number;
   };
 };
 

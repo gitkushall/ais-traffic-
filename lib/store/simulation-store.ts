@@ -14,7 +14,7 @@ export function createSimulationStore(): SimulationStore {
   const engine = new SimulationEngine();
   let snapshot = engine.snapshot();
   const listeners = new Set<(snapshot: SimulationSnapshot) => void>();
-  let timer = 0;
+  let timer: number | ReturnType<typeof setInterval> | null = null;
 
   const emit = () => {
     snapshot = engine.snapshot();
@@ -35,17 +35,29 @@ export function createSimulationStore(): SimulationStore {
       emit();
     },
     start() {
-      if (timer === 0) {
-        timer = window.setInterval(() => {
+      if (timer === null) {
+        try {
           engine.tick(1 / 30);
           emit();
+        } catch (error) {
+          console.error("Simulation start failed", error);
+        }
+
+        timer = window.setInterval(() => {
+          try {
+            engine.tick(1 / 30);
+            emit();
+          } catch (error) {
+            console.error("Simulation tick failed", error);
+          }
         }, 1000 / 30);
+        emit();
       }
     },
     stop() {
-      if (timer !== 0) {
+      if (timer !== null) {
         window.clearInterval(timer);
-        timer = 0;
+        timer = null;
       }
     },
   };

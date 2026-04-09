@@ -292,6 +292,17 @@ input {
   color: #dff9e6;
 }
 
+.hero-badge.is-paused {
+  background: rgba(255, 166, 0, 0.16);
+  color: #ffe9b8;
+}
+
+.hero-badge.is-stalled,
+.hero-badge.is-stopped {
+  background: rgba(255, 84, 84, 0.16);
+  color: #ffd8d8;
+}
+
 .hero-stat-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

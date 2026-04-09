@@ -7,7 +7,13 @@ import { DashboardPhaseSnapshot } from "@/lib/simulation/domain/snapshots";
 type ActivePhaseCardProps = {
   phase: DashboardPhaseSnapshot;
   weatherLabel?: string;
-  analytics?: { tick: number; stage: string; phaseScores: Array<{ key: string; score: number }>; emergencyServedCount: number };
+  analytics?: {
+    tick: number;
+    stage: string;
+    phaseScores: Array<{ key: string; score: number }>;
+    emergencyServedCount: number;
+    pedestrianServedCount: number;
+  };
   compact?: boolean;
   scene?: SceneSnapshot;
 };
@@ -95,7 +101,7 @@ export function ActivePhaseCard({ phase, weatherLabel, analytics, compact = fals
         </div>
         <div className="metric-tile">
           <span>Walk crossings</span>
-          <strong>{phase.walkCrossings.length > 0 ? phase.walkCrossings.length : 0}</strong>
+          <strong>{analytics?.pedestrianServedCount ?? 0}</strong>
         </div>
         <div className="metric-tile">
           <span>Weather</span>

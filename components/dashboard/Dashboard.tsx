@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { LaneScoresCard } from "@/components/dashboard/LaneScoresCard";
@@ -16,14 +17,53 @@ type DashboardProps = {
 };
 
 export function Dashboard({ snapshot, dispatch, mode = "full" }: DashboardProps) {
+  const tick = snapshot.dashboard.analytics.tick;
+  const [lastAdvancedAt, setLastAdvancedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  const [mounted, setMounted] = useState(false);
   const averageScore =
     snapshot.dashboard.lanes.reduce((sum, lane) => sum + lane.score, 0) / Math.max(snapshot.dashboard.lanes.length, 1);
-  const hottestLane =
-    [...snapshot.dashboard.lanes].sort((a, b) => b.score - a.score)[0] ?? snapshot.dashboard.lanes[0];
+  const hottestLane = [...snapshot.dashboard.lanes].sort((a, b) => b.score - a.score)[0] ?? null;
+  const hasActivePressure = snapshot.dashboard.lanes.some(
+    (lane) => lane.score > 0 || lane.queueLength > 0 || lane.carCount > 0 || lane.waitSeconds > 0,
+  );
   const emergencyLabel = snapshot.dashboard.phase.emergency.detected
     ? snapshot.dashboard.phase.emergency.type?.replaceAll("_", " ") ?? "Emergency"
     : "No emergency";
   const isCompact = mode === "compact";
+  const isStalled = mounted && snapshot.dashboard.controls.running && tick > 0 && now - lastAdvancedAt > 2000;
+  const status = !mounted
+    ? snapshot.dashboard.controls.running
+      ? "Live"
+      : "Stopped"
+    : !snapshot.dashboard.controls.running
+      ? tick > 0
+        ? "Paused"
+        : "Stopped"
+      : tick === 0
+        ? "Stopped"
+        : isStalled
+          ? "Stalled"
+          : "Live";
+  const statusClass =
+    status === "Live" ? "is-live" : status === "Paused" ? "is-paused" : status === "Stalled" ? "is-stalled" : "is-stopped";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (tick > 0) {
+      setLastAdvancedAt(Date.now());
+    }
+  }, [tick]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return (
     <div className={`dashboard ${isCompact ? "is-compact" : ""}`}>
@@ -39,8 +79,8 @@ export function Dashboard({ snapshot, dispatch, mode = "full" }: DashboardProps)
           <div className="hero-badges">
             <span className="hero-badge">{snapshot.dashboard.intersectionType.toUpperCase()}</span>
             <span className="hero-badge">{snapshot.dashboard.weatherLabel}</span>
-            <span className={`hero-badge ${snapshot.dashboard.controls.running ? "is-live" : ""}`}>
-              {snapshot.dashboard.controls.running ? "Simulation Live" : "Simulation Paused"}
+            <span className={`hero-badge ${statusClass}`}>
+              Simulation {status}
             </span>
           </div>
           <div className="hero-actions">
@@ -57,8 +97,10 @@ export function Dashboard({ snapshot, dispatch, mode = "full" }: DashboardProps)
           </div>
           <div className="hero-stat">
             <span className="hero-stat-label">Critical Approach</span>
-            <strong>{hottestLane?.label ?? "N/A"}</strong>
-            <span className="hero-stat-meta">{hottestLane ? `${hottestLane.queueLength} queued, ${hottestLane.waitSeconds.toFixed(0)}s wait` : "No lane data"}</span>
+            <strong>{hasActivePressure ? hottestLane?.label ?? "N/A" : "No active pressure"}</strong>
+            <span className="hero-stat-meta">
+              {hasActivePressure && hottestLane ? `${hottestLane.queueLength} queued, ${hottestLane.waitSeconds.toFixed(0)}s wait` : "All approaches are currently clear"}
+            </span>
           </div>
           <div className="hero-stat">
             <span className="hero-stat-label">Signal Mode</span>

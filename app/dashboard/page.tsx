@@ -15,7 +15,6 @@ export default function DashboardPage() {
     store.start();
     return () => {
       unsubscribe();
-      store.stop();
     };
   }, []);
 

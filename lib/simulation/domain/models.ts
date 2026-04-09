@@ -68,6 +68,7 @@ export type IntersectionState = {
   lanes: LaneState[];
   emergencyState: EmergencyPriorityState | null;
   emergencyServedCount: number;
+  pedestrianServedCount: number;
 };
 
 export type SimulationWeights = {

@@ -15,7 +15,6 @@ export default function Page() {
     store.start();
     return () => {
       unsubscribe();
-      store.stop();
     };
   }, []);
 

@@ -57,6 +57,7 @@ export function createSidebarSnapshot(
       stage: intersection.stage.toUpperCase(),
       phaseScores,
       emergencyServedCount: intersection.emergencyServedCount,
+      pedestrianServedCount: intersection.pedestrianServedCount,
     },
   };
 }

@@ -237,7 +237,7 @@ export class SimulationEngine {
       ...nextState,
       weatherMode: this.weather,
       emergencyState,
-      crosswalkSignals: this.buildCrosswalkSignals(layout, this.currentAllowedMovementIds(layout, nextState), nextState.stage, emergencyState),
+      crosswalkSignals: this.buildCrosswalkSignals(layout, nextState.currentPhaseKey, nextState.stage, emergencyState),
     };
 
     this.updatePedestrians(layout, dt, factors.pedestrian);
@@ -338,14 +338,14 @@ export class SimulationEngine {
     const layout = getIntersectionLayout(type);
     const initialPhase = layout.phases[0];
     const nextPhase = layout.phases[1] ?? layout.phases[0];
-    const lanes: LaneState[] = layout.lanes.map((lane, index) => ({
+    const lanes: LaneState[] = layout.lanes.map((lane) => ({
       id: lane.id,
       label: lane.label,
       direction: lane.direction,
       carCount: 0,
       queueLength: 0,
       pedestrianCount: 0,
-      waitingTime: 3 + index * 2,
+      waitingTime: 0,
       score: 0,
       isGreen: initialPhase.approaches.includes(lane.id),
     }));
@@ -376,7 +376,7 @@ export class SimulationEngine {
       nextPhase: [...nextPhase.approaches],
       allowedMovements: [...initialPhase.allowedMovements],
       nextAllowedMovements: [...nextPhase.allowedMovements],
-      crosswalkSignals: this.buildCrosswalkSignals(layout, new Set(initialPhase.allowedMovements), "green", null),
+      crosswalkSignals: this.buildCrosswalkSignals(layout, initialPhase.key, "green", null),
       greenRemaining: 12,
       activePhaseElapsed: 0,
       controllerReason: "Initial adaptive release",
@@ -386,6 +386,7 @@ export class SimulationEngine {
       lanes,
       emergencyState: null,
       emergencyServedCount: 0,
+      pedestrianServedCount: 0,
     };
   }
 
@@ -423,6 +424,11 @@ export class SimulationEngine {
         this.pedestrians.get(lane.id)!.push(this.createPedestrian(lane, index * 0.12));
       }
     }
+
+    this.intersection = {
+      ...this.intersection,
+      lanes: this.buildLaneStates(layout),
+    };
   }
 
   private buildLaneStates(layout: IntersectionLayout): LaneState[] {
@@ -432,6 +438,14 @@ export class SimulationEngine {
       const queueLength = vehicles.filter((vehicle) => !vehicle.clearedStopLine && vehicle.stopProgress - vehicle.progress < 240).length;
       const green = this.intersection.stage === "green" && this.intersection.currentPhase.includes(laneLayout.id);
       const previous = this.intersection.lanes.find((lane) => lane.id === laneLayout.id);
+      const previousWait = previous?.waitingTime ?? 0;
+      const waitingTime =
+        queueLength === 0
+          ? 0
+          : green
+            ? Math.max(0, previousWait - 0.35)
+            : previousWait + 0.15;
+
       return {
         id: laneLayout.id,
         label: laneLayout.label,
@@ -439,7 +453,7 @@ export class SimulationEngine {
         carCount: vehicles.length,
         queueLength,
         pedestrianCount: pedestrians.length,
-        waitingTime: green ? Math.max(0, (previous?.waitingTime ?? 0) - 0.35) : (previous?.waitingTime ?? 0) + 0.15,
+        waitingTime,
         score: previous?.score ?? 0,
         isGreen: green,
       };
@@ -539,25 +553,46 @@ export class SimulationEngine {
   }
 
   private spawnEmergencyVehicle(layout: IntersectionLayout) {
-    const candidatePairs = layout.lanes.flatMap((lane) =>
-      lane.movementLanes.map((movementLane) => ({
-        lane,
-        movementLane,
-      })),
-    );
-    const candidate = candidatePairs[Math.floor(Math.random() * candidatePairs.length)];
+    const currentPhaseApproaches = new Set(this.intersection.currentPhase);
+    const candidates = layout.lanes.flatMap((lane) =>
+      lane.movementLanes.map((movementLane) => {
+        const route = this.getRoute(movementLane);
+        const laneVehicles = this.vehicles.get(lane.id) ?? [];
+        const sameTrackVehicles = laneVehicles
+          .filter((vehicle) => this.findMovementLane(lane, vehicle).trackKey === movementLane.trackKey)
+          .sort((a, b) => a.progress - b.progress);
+        const nearestVehicle = sameTrackVehicles[0] ?? null;
+        const preferredProgress = Math.max(0, route.stopProgress - 140);
+        const safeProgress = nearestVehicle
+          ? Math.max(0, Math.min(preferredProgress, nearestVehicle.progress - nearestVehicle.bodyLength - nearestVehicle.minimumGap - 18))
+          : preferredProgress;
+        const phase = this.phaseForMovement(layout, route.id);
+        const offPhaseBonus = currentPhaseApproaches.has(lane.id) ? 0 : 80;
+        const straightBonus = movementLane.intent === "straight" ? 40 : movementLane.intent === "left" ? 24 : 12;
+        const viability = safeProgress + offPhaseBonus + straightBonus;
+        return {
+          lane,
+          movementLane,
+          route,
+          safeProgress,
+          viability,
+          phaseKey: phase?.key ?? null,
+        };
+      }),
+    )
+      .filter((candidate) => candidate.safeProgress >= 12)
+      .sort((a, b) => b.viability - a.viability);
+
+    const candidate = candidates[0];
     if (!candidate) {
       return;
     }
+
     const laneVehicles = this.vehicles.get(candidate.lane.id) ?? [];
-    const candidateTrackKey = candidate.movementLane.trackKey;
-    const blockedSpawn = laneVehicles.some(
-      (vehicle) => this.findMovementLane(candidate.lane, vehicle).trackKey === candidateTrackKey && vehicle.progress < vehicle.bodyLength + vehicle.minimumGap + 24,
+    laneVehicles.push(
+      this.createVehicle(candidate.lane, candidate.movementLane, candidate.safeProgress, candidate.route, this.pickEmergencyType()),
     );
-    if (blockedSpawn) {
-      return;
-    }
-    laneVehicles.push(this.createVehicle(candidate.lane, candidate.movementLane, 0, this.getRoute(candidate.movementLane), this.pickEmergencyType()));
+    laneVehicles.sort((a, b) => a.progress - b.progress);
     this.vehicles.set(candidate.lane.id, laneVehicles);
     this.aiTimer = 0.6;
   }
@@ -797,6 +832,10 @@ export class SimulationEngine {
             retained.push(pedestrian);
             continue;
           }
+          this.intersection = {
+            ...this.intersection,
+            pedestrianServedCount: this.intersection.pedestrianServedCount + 1,
+          };
           continue;
         }
         retained.push(pedestrian);
@@ -945,26 +984,38 @@ export class SimulationEngine {
 
   private buildCrosswalkSignals(
     layout: IntersectionLayout,
-    allowedMovements: Set<string>,
+    phaseKey: string,
     stage: IntersectionState["stage"],
     emergency: EmergencyPriorityState | null,
   ): Record<string, CrosswalkSignalState> {
     const signals: Record<string, CrosswalkSignalState> = {};
-    const activeApproaches = new Set(
-      layout.lanes
-        .filter((lane) => lane.movementLanes.some((movementLane) => allowedMovements.has(movementLane.id)))
-        .map((lane) => lane.id),
-    );
+    const releasedCrosswalks = this.releasedCrosswalksForPhase(layout, phaseKey);
 
     for (const crosswalk of layout.crosswalks) {
       const laneId = crosswalk.id.replace("cross-", "") as LaneId;
-      const crossingApproachIsRed = !activeApproaches.has(laneId);
       const conflictsEmergency = !!emergency && emergency.laneId === laneId;
-      const conflictingActiveMovement = this.crosswalkConflictingMovements(layout, crosswalk.id).some((movementId) => allowedMovements.has(movementId));
       signals[crosswalk.id] =
-        stage === "green" && crossingApproachIsRed && !conflictsEmergency && !conflictingActiveMovement ? "walk" : "dont_walk";
+        stage === "green" && releasedCrosswalks.has(crosswalk.id) && !conflictsEmergency ? "walk" : "dont_walk";
     }
     return signals;
+  }
+
+  private releasedCrosswalksForPhase(layout: IntersectionLayout, phaseKey: string) {
+    const phase = layout.phases.find((item) => item.key === phaseKey);
+    if (!phase) {
+      return new Set<string>();
+    }
+
+    if (phase.key.endsWith("_main")) {
+      if (phase.approaches.includes("north") || phase.approaches.includes("south")) {
+        return new Set(layout.crosswalks.filter((crosswalk) => crosswalk.id === "cross-east" || crosswalk.id === "cross-west").map((crosswalk) => crosswalk.id));
+      }
+      if (phase.approaches.includes("east") || phase.approaches.includes("west")) {
+        return new Set(layout.crosswalks.filter((crosswalk) => crosswalk.id === "cross-north" || crosswalk.id === "cross-south").map((crosswalk) => crosswalk.id));
+      }
+    }
+
+    return new Set<string>();
   }
 
   private activeBlockedCrosswalkIds() {
