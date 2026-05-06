@@ -13,7 +13,9 @@ import {
   EmergencyVehicleType,
   IntersectionState,
   LaneState,
+  MetricSample,
   PedestrianAgentState,
+  ScenarioPreset,
   SimulationCommand,
   SimulationWeights,
   VehicleAgentState,
@@ -31,6 +33,28 @@ const DEFAULT_WEIGHTS: SimulationWeights = {
   wait: 0.3,
   pedestrian: 0.2,
 };
+const MIN_FOLLOWING_GAP = 22;
+const COMFORTABLE_FOLLOWING_GAP = 44;
+const VEHICLE_COLLISION_BOX = { width: 16, height: 28 };
+const PEDESTRIAN_COLLISION_BOX = { size: 8 };
+const MAX_APPROACH_QUEUE = 8;
+const PLATOON_RELEASE_WINDOW = 0.5;
+const PLATOON_RELEASE_SPACING = 0.18;
+
+// Vehicle type profiles: [bodyLength, bodyWidth, maxSpeedBase, accel, braking, minGap, comfortGap]
+// Distribution: compact 20%, sedan 40%, sport 10%, SUV 20%, truck 10%
+const VEHICLE_PROFILES = [
+  { bodyLength: 20, bodyWidth: 11, maxSpeedBase: 2.0, accel: 5.0, braking: 7.5, minGap: 22, comfortGap: 36 }, // compact
+  { bodyLength: 24, bodyWidth: 13, maxSpeedBase: 2.1, accel: 4.2, braking: 6.6, minGap: 26, comfortGap: 42 }, // sedan
+  { bodyLength: 24, bodyWidth: 13, maxSpeedBase: 2.45, accel: 4.8, braking: 7.0, minGap: 25, comfortGap: 40 }, // sport sedan
+  { bodyLength: 24, bodyWidth: 13, maxSpeedBase: 1.95, accel: 4.0, braking: 6.4, minGap: 28, comfortGap: 44 }, // sedan (cautious)
+  { bodyLength: 28, bodyWidth: 14, maxSpeedBase: 1.9, accel: 3.8, braking: 6.2, minGap: 30, comfortGap: 48 }, // SUV
+  { bodyLength: 28, bodyWidth: 14, maxSpeedBase: 2.05, accel: 3.6, braking: 6.0, minGap: 32, comfortGap: 50 }, // SUV (large)
+  { bodyLength: 20, bodyWidth: 11, maxSpeedBase: 2.2, accel: 5.2, braking: 7.8, minGap: 20, comfortGap: 34 }, // compact (agile)
+  { bodyLength: 24, bodyWidth: 13, maxSpeedBase: 2.3, accel: 4.5, braking: 6.8, minGap: 26, comfortGap: 42 }, // sedan
+  { bodyLength: 32, bodyWidth: 15, maxSpeedBase: 1.65, accel: 2.9, braking: 5.6, minGap: 38, comfortGap: 56 }, // truck/van
+  { bodyLength: 28, bodyWidth: 14, maxSpeedBase: 1.8, accel: 3.5, braking: 5.9, minGap: 32, comfortGap: 50 }, // SUV
+] as const;
 
 const WEATHER_ORDER: WeatherMode[] = ["clear", "rain", "fog", "night"];
 const EMERGENCY_TYPES: EmergencyVehicleType[] = ["ambulance", "police", "fire_truck"];
@@ -123,6 +147,23 @@ function routeColor(id: string) {
   return palette[hash % palette.length];
 }
 
+function stageDisplayLabel(stage: IntersectionState["stage"]) {
+  if (stage === "amber") {
+    return "YELLOW";
+  }
+  if (stage === "all_red") {
+    return "ALL RED";
+  }
+  return "GREEN";
+}
+
+const SCENARIO_SETTINGS: Record<string, { spawnMultiplier: number; speedHint: number; weatherHint: WeatherMode; label: string }> = {
+  normal:      { spawnMultiplier: 1.0,  speedHint: 1.0, weatherHint: "clear",  label: "Normal Flow" },
+  rush_hour:   { spawnMultiplier: 2.4,  speedHint: 1.0, weatherHint: "clear",  label: "Rush Hour" },
+  off_peak:    { spawnMultiplier: 0.35, speedHint: 1.0, weatherHint: "clear",  label: "Off-Peak" },
+  event_surge: { spawnMultiplier: 3.2,  speedHint: 1.0, weatherHint: "rain",   label: "Event Surge" },
+};
+
 export class SimulationEngine {
   private intersectionType: IntersectionType = "4way";
   private weights: SimulationWeights = DEFAULT_WEIGHTS;
@@ -130,6 +171,23 @@ export class SimulationEngine {
   private debug = false;
   private speed = 1;
   private weather: WeatherMode = "clear";
+  private activeScenario: ScenarioPreset = "normal";
+  private spawnMultiplier = 1.0;
+  private vehiclesServedCount = 0;
+  private metricsHistory: MetricSample[] = [];
+  private metricsTimer = 0;
+  private recentServedCount = 0;
+  private isFixedCycle = false;
+  private fixedCycleTimer = 0;
+  private fixedCyclePhaseIndex = 0;
+  private fixedCycleGreen = 30;
+  private comparisonAdaptiveServed = 0;
+  private comparisonFixedServed = 0;
+  private comparisonAdaptiveWait = 0;
+  private comparisonFixedWait = 0;
+  private comparisonAdaptiveQueue = 0;
+  private comparisonFixedQueue = 0;
+  private comparisonSamples = 0;
   private intersection!: IntersectionState;
   private signalController = new SignalController(10, 3, 1.5, 1.08);
   private lastDecision = {
@@ -138,6 +196,7 @@ export class SimulationEngine {
     phase: ["north", "south"] as LaneId[],
     allowedMovements: [] as string[],
     score: 0,
+    rankedPhases: [] as Array<{ key: string; label: string; phase: LaneId[]; allowedMovements: string[]; score: number }>,
     scores: {} as Record<string, number>,
     queues: {} as Record<string, number>,
     waits: {} as Record<string, number>,
@@ -149,13 +208,16 @@ export class SimulationEngine {
   private pedestrianCounter = 0;
   private vehicles = new Map<LaneId, VehicleAgentState[]>();
   private pedestrians = new Map<LaneId, PedestrianAgentState[]>();
-  private vehicleSpawnTimers = new Map<LaneId, number>();
   private pedestrianSpawnTimers = new Map<LaneId, number>();
   private routeCache = new Map<string, MovementRoute>();
   private conflictCache = new Map<string, boolean>();
   private routeCrosswalkCache = new Map<string, string[]>();
   private laneDemandLevels = new Map<LaneId, number>();
   private movementDemandLevels = new Map<string, number>();
+  private laneWasGreen = new Map<LaneId, boolean>();
+  private laneGreenElapsed = new Map<LaneId, number>();
+  private lanePlatoonRemaining = new Map<LaneId, number>();
+  private lanePlatoonAccumulator = new Map<LaneId, number>();
   private servedEmergencyIds = new Set<string>();
 
   constructor() {
@@ -194,6 +256,27 @@ export class SimulationEngine {
     }
     if (command.type === "spawnEmergency") {
       this.spawnEmergencyVehicle(getIntersectionLayout(this.intersectionType));
+      return;
+    }
+    if (command.type === "setScenario") {
+      const settings = SCENARIO_SETTINGS[command.scenario];
+      this.activeScenario = command.scenario;
+      this.spawnMultiplier = settings.spawnMultiplier;
+      this.weather = settings.weatherHint;
+      return;
+    }
+    if (command.type === "toggleControllerMode") {
+      this.isFixedCycle = !this.isFixedCycle;
+      this.fixedCycleTimer = 0;
+      // Reset comparison counters for a fresh comparison
+      this.comparisonAdaptiveServed = 0;
+      this.comparisonFixedServed = 0;
+      this.comparisonAdaptiveWait = 0;
+      this.comparisonFixedWait = 0;
+      this.comparisonAdaptiveQueue = 0;
+      this.comparisonFixedQueue = 0;
+      this.comparisonSamples = 0;
+      return;
     }
   }
 
@@ -222,14 +305,40 @@ export class SimulationEngine {
       this.aiTimer = 0;
     }
 
+    // Fixed-cycle mode: override AI decision with round-robin phases on a 30s timer
+    let effectiveDecision = this.lastDecision;
+    if (this.isFixedCycle) {
+      this.fixedCycleTimer += dt;
+      const phases = layout.phases;
+      if (phases.length > 0) {
+        const currentFixed = phases[this.fixedCyclePhaseIndex % phases.length];
+        if (this.fixedCycleTimer >= this.fixedCycleGreen) {
+          this.fixedCycleTimer = 0;
+          this.fixedCyclePhaseIndex = (this.fixedCyclePhaseIndex + 1) % phases.length;
+        }
+        const fixedPhase = phases[this.fixedCyclePhaseIndex % phases.length];
+        effectiveDecision = {
+          ...this.lastDecision,
+          key: fixedPhase.key,
+          label: fixedPhase.label,
+          phase: fixedPhase.approaches as LaneId[],
+          allowedMovements: fixedPhase.approaches,
+          score: 0,
+          emergency: null,
+          reasons: { [fixedPhase.key]: `Fixed cycle — ${this.fixedCycleGreen}s per phase` },
+        };
+      }
+    }
+
     const nextState = this.signalController.tick(
       {
         ...this.intersection,
         tick: this.intersection.tick + 1,
         weatherMode: this.weather,
         lanes,
+        controllerMode: this.isFixedCycle ? "fixed_cycle" : this.intersection.controllerMode,
       },
-      this.lastDecision,
+      effectiveDecision,
       dt,
     );
 
@@ -237,11 +346,16 @@ export class SimulationEngine {
       ...nextState,
       weatherMode: this.weather,
       emergencyState,
+      controllerMode: this.isFixedCycle ? "fixed_cycle" : nextState.controllerMode,
+      controllerReason: this.isFixedCycle
+        ? `Fixed ${this.fixedCycleGreen}s cycle — ${Math.max(0, this.fixedCycleGreen - this.fixedCycleTimer).toFixed(0)}s remaining`
+        : nextState.controllerReason,
       crosswalkSignals: this.buildCrosswalkSignals(layout, nextState.currentPhaseKey, nextState.stage, emergencyState),
     };
 
     this.updatePedestrians(layout, dt, factors.pedestrian);
     this.updateVehicles(layout, dt, factors);
+    this.recordMetricsSample(layout, dt);
   }
 
   snapshot(): SimulationSnapshot {
@@ -253,6 +367,18 @@ export class SimulationEngine {
       this.debug,
       this.speed,
       this.weather,
+      this.vehiclesServedCount,
+      this.metricsHistory,
+      this.activeScenario,
+      this.isFixedCycle,
+      {
+        adaptiveThroughput: this.comparisonAdaptiveServed,
+        fixedThroughput: this.comparisonFixedServed,
+        adaptiveAvgWait: Math.round(this.comparisonAdaptiveWait * 10) / 10,
+        fixedAvgWait: Math.round(this.comparisonFixedWait * 10) / 10,
+        adaptiveQueue: Math.round(this.comparisonAdaptiveQueue * 10) / 10,
+        fixedQueue: Math.round(this.comparisonFixedQueue * 10) / 10,
+      },
     );
 
     const debugPaths: SceneDebugPathSnapshot[] = layout.lanes.flatMap((laneLayout) =>
@@ -285,7 +411,7 @@ export class SimulationEngine {
     const scene: SceneSnapshot = {
       intersectionType: this.intersection.type,
       phaseLabel: this.intersection.currentPhaseLabel,
-      signalStageLabel: this.intersection.stage.toUpperCase(),
+      signalStageLabel: stageDisplayLabel(this.intersection.stage),
       weatherMode: this.weather,
       debug: this.debug,
       roads: layout.roads,
@@ -310,13 +436,16 @@ export class SimulationEngine {
           movementLane: vehicle.movementLane,
           state: vehicle.state,
           committed: vehicle.committed,
-          brakeLights: vehicle.speed < 0.35 && !vehicle.clearedStopLine,
+          brakeLights: vehicle.speed < vehicle.maxSpeed * 0.15 && !vehicle.clearedStopLine,
           progress: vehicle.progress,
+          inBox: vehicle.inBox,
           leadVehicleId: vehicle.leadVehicleId,
           gapToLeader: vehicle.gapToLeader,
           waitReason: vehicle.waitReason,
           emergencyType: vehicle.emergencyType,
           emergencyDetected: vehicle.emergencyDetected,
+          bodyLength: vehicle.bodyLength,
+          bodyWidth: vehicle.bodyWidth,
         })),
       })),
       signals: layout.lanes.map((laneLayout) => this.signalSnapshot(layout, laneLayout, laneLayout.signalX, laneLayout.signalY)),
@@ -326,6 +455,9 @@ export class SimulationEngine {
         x: pedestrian.x,
         y: pedestrian.y,
         color: pedestrian.color,
+        progress: pedestrian.progress,
+        committed: pedestrian.committed,
+        state: pedestrian.state,
       })),
       debugPaths,
       debugStops,
@@ -356,6 +488,7 @@ export class SimulationEngine {
       phase: [...initialPhase.approaches],
       allowedMovements: [...initialPhase.allowedMovements],
       score: 0,
+      rankedPhases: [],
       scores: {},
       queues: {},
       waits: {},
@@ -394,29 +527,37 @@ export class SimulationEngine {
     const layout = getIntersectionLayout(type);
     this.vehicles = new Map();
     this.pedestrians = new Map();
-    this.vehicleSpawnTimers = new Map();
     this.pedestrianSpawnTimers = new Map();
     this.routeCache = new Map();
     this.conflictCache = new Map();
     this.routeCrosswalkCache = new Map();
     this.laneDemandLevels = new Map();
     this.movementDemandLevels = new Map();
+    this.laneWasGreen = new Map();
+    this.laneGreenElapsed = new Map();
+    this.lanePlatoonRemaining = new Map();
+    this.lanePlatoonAccumulator = new Map();
     this.servedEmergencyIds = new Set();
 
     for (const lane of layout.lanes) {
       this.vehicles.set(lane.id, []);
       this.pedestrians.set(lane.id, []);
-      this.vehicleSpawnTimers.set(lane.id, 0);
       this.pedestrianSpawnTimers.set(lane.id, 0);
       this.laneDemandLevels.set(lane.id, 0.95 + (this.hashLane(lane.id) % 5) * 0.05);
+      this.laneWasGreen.set(lane.id, false);
+      this.laneGreenElapsed.set(lane.id, 0);
+      this.lanePlatoonRemaining.set(lane.id, 0);
+      this.lanePlatoonAccumulator.set(lane.id, 0);
 
       for (const movementLane of lane.movementLanes) {
         this.movementDemandLevels.set(
           movementLane.id,
           movementLane.intent === "straight" ? 1.04 : movementLane.intent === "right" ? 0.9 : 0.72,
         );
+        const route = this.getRoute(movementLane);
         for (let index = 0; index < 2; index += 1) {
-          this.vehicles.get(lane.id)!.push(this.createVehicle(lane, movementLane, 150 + index * 40));
+          const seededProgress = Math.max(0, route.stopProgress - (172 + index * 44));
+          this.vehicles.get(lane.id)!.push(this.createVehicle(lane, movementLane, seededProgress, route));
         }
       }
 
@@ -429,6 +570,46 @@ export class SimulationEngine {
       ...this.intersection,
       lanes: this.buildLaneStates(layout),
     };
+  }
+
+  private recordMetricsSample(layout: IntersectionLayout, dt: number) {
+    this.metricsTimer += dt;
+    if (this.metricsTimer < 5) {
+      return;
+    }
+    this.metricsTimer = 0;
+    const allVehicles = Array.from(this.vehicles.values()).flat();
+    const waitingVehicles = allVehicles.filter((v) => !v.clearedStopLine);
+    const avgWait = waitingVehicles.length > 0
+      ? waitingVehicles.reduce((sum, v) => {
+          const lane = layout.lanes.find((l) => this.vehicles.get(l.id)?.includes(v));
+          const route = lane ? this.getRoute(this.findMovementLane(lane, v)) : null;
+          return sum + (route ? Math.max(0, (route.stopProgress - v.progress) / Math.max(0.1, v.maxSpeed)) : 0);
+        }, 0) / waitingVehicles.length
+      : 0;
+    const totalQueue = waitingVehicles.length;
+    const sample: MetricSample = {
+      tick: this.intersection.tick,
+      vehiclesServed: this.recentServedCount,
+      avgWaitSeconds: Math.round(avgWait * 10) / 10,
+      totalQueue,
+    };
+    // Update comparison running averages
+    this.comparisonSamples += 1;
+    if (this.isFixedCycle) {
+      this.comparisonFixedServed += this.recentServedCount;
+      this.comparisonFixedWait = (this.comparisonFixedWait * (this.comparisonSamples - 1) + avgWait) / this.comparisonSamples;
+      this.comparisonFixedQueue = (this.comparisonFixedQueue * (this.comparisonSamples - 1) + totalQueue) / this.comparisonSamples;
+    } else {
+      this.comparisonAdaptiveServed += this.recentServedCount;
+      this.comparisonAdaptiveWait = (this.comparisonAdaptiveWait * (this.comparisonSamples - 1) + avgWait) / this.comparisonSamples;
+      this.comparisonAdaptiveQueue = (this.comparisonAdaptiveQueue * (this.comparisonSamples - 1) + totalQueue) / this.comparisonSamples;
+    }
+    this.recentServedCount = 0;
+    this.metricsHistory.push(sample);
+    if (this.metricsHistory.length > 60) {
+      this.metricsHistory.shift();
+    }
   }
 
   private buildLaneStates(layout: IntersectionLayout): LaneState[] {
@@ -599,29 +780,86 @@ export class SimulationEngine {
 
   private spawnVehicles(layout: IntersectionLayout, dt: number, spawnFactor: number) {
     for (const lane of layout.lanes) {
-      const current = (this.vehicleSpawnTimers.get(lane.id) ?? 0) + dt;
-      const laneDemand = this.laneDemandLevels.get(lane.id) ?? 1;
-      const interval = (1.5 + (this.hashLane(lane.id) % 3) * 0.16) / Math.max(0.45, spawnFactor * laneDemand);
-      if (current >= interval) {
-        this.vehicleSpawnTimers.set(lane.id, 0);
-        const movementLane = this.pickMovementLane(lane);
-        if (!movementLane) {
-          continue;
+      const isGreen = this.intersection.stage === "green" && this.intersection.currentPhase.includes(lane.id);
+      const wasGreen = this.laneWasGreen.get(lane.id) ?? false;
+      const queueLength = this.approachQueueLength(lane);
+      let greenElapsed = this.laneGreenElapsed.get(lane.id) ?? 0;
+      let platoonRemaining = this.lanePlatoonRemaining.get(lane.id) ?? 0;
+      let platoonAccumulator = this.lanePlatoonAccumulator.get(lane.id) ?? 0;
+
+      if (isGreen) {
+        if (!wasGreen) {
+          greenElapsed = 0;
+          platoonAccumulator = 0;
+          platoonRemaining = queueLength >= 4 ? 2 + Math.floor(Math.random() * 2) : 0;
         }
-        const laneVehicles = this.vehicles.get(lane.id)!;
-        const route = this.getRoute(movementLane);
-        const sameMovementCount = laneVehicles.filter((vehicle) => this.findMovementLane(lane, vehicle).trackKey === movementLane.trackKey).length;
-        const blockedSpawn = laneVehicles.some(
-          (vehicle) => this.findMovementLane(lane, vehicle).trackKey === movementLane.trackKey && vehicle.progress < vehicle.bodyLength + vehicle.minimumGap,
-        );
-        if (sameMovementCount < 7 && !blockedSpawn) {
-          const emergencyRoll = this.detectEmergencyPriority(layout) === null && Math.random() < 0.001;
-          laneVehicles.push(this.createVehicle(lane, movementLane, 0, route, emergencyRoll ? this.pickEmergencyType() : null));
-        }
+        greenElapsed += dt;
+        this.laneWasGreen.set(lane.id, true);
       } else {
-        this.vehicleSpawnTimers.set(lane.id, current);
+        greenElapsed = 0;
+        platoonRemaining = 0;
+        platoonAccumulator = 0;
+        this.laneWasGreen.set(lane.id, false);
       }
+
+      if (isGreen && greenElapsed <= PLATOON_RELEASE_WINDOW && platoonRemaining > 0) {
+        platoonAccumulator += dt;
+        while (platoonAccumulator >= PLATOON_RELEASE_SPACING && platoonRemaining > 0) {
+          if (!this.trySpawnVehicle(lane, spawnFactor)) {
+            break;
+          }
+          platoonRemaining -= 1;
+          platoonAccumulator -= PLATOON_RELEASE_SPACING;
+        }
+      }
+
+      const laneDemand = this.laneDemandLevels.get(lane.id) ?? 1;
+      const poissonRate = this.baseDemandRate(lane.id) * Math.max(0.35, laneDemand * spawnFactor * this.spawnMultiplier);
+      if (Math.random() < Math.min(0.95, poissonRate * dt)) {
+        this.trySpawnVehicle(lane, spawnFactor);
+      }
+
+      this.laneGreenElapsed.set(lane.id, greenElapsed);
+      this.lanePlatoonRemaining.set(lane.id, platoonRemaining);
+      this.lanePlatoonAccumulator.set(lane.id, platoonAccumulator);
     }
+  }
+
+  private baseDemandRate(laneId: LaneId) {
+    if (laneId === "north" || laneId === "south") {
+      return 0.52;
+    }
+    return 0.34;
+  }
+
+  private approachQueueLength(lane: LaneLayout) {
+    const laneVehicles = this.vehicles.get(lane.id) ?? [];
+    return laneVehicles.filter((vehicle) => !vehicle.clearedStopLine && vehicle.stopProgress - vehicle.progress < 240).length;
+  }
+
+  private trySpawnVehicle(lane: LaneLayout, spawnFactor: number) {
+    if (this.approachQueueLength(lane) >= MAX_APPROACH_QUEUE) {
+      return false;
+    }
+
+    const movementLane = this.pickMovementLane(lane);
+    if (!movementLane) {
+      return false;
+    }
+
+    const laneVehicles = this.vehicles.get(lane.id)!;
+    const route = this.getRoute(movementLane);
+    const sameMovementCount = laneVehicles.filter((vehicle) => this.findMovementLane(lane, vehicle).trackKey === movementLane.trackKey).length;
+    const blockedSpawn = laneVehicles.some(
+      (vehicle) => this.findMovementLane(lane, vehicle).trackKey === movementLane.trackKey && vehicle.progress < vehicle.bodyLength + vehicle.minimumGap,
+    );
+    if (sameMovementCount >= 7 || blockedSpawn) {
+      return false;
+    }
+
+    const emergencyRoll = this.detectEmergencyPriority(getIntersectionLayout(this.intersectionType)) === null && Math.random() < 0.0015 * spawnFactor;
+    laneVehicles.push(this.createVehicle(lane, movementLane, 0, route, emergencyRoll ? this.pickEmergencyType() : null));
+    return true;
   }
 
   private updateVehicles(layout: IntersectionLayout, dt: number, factors: ReturnType<typeof weatherFactors>) {
@@ -629,6 +867,11 @@ export class SimulationEngine {
     const currentAllowedMovements = this.currentAllowedMovementIds(layout);
     const blockedCrosswalks = this.activeBlockedCrosswalkIds();
     const occupiedCrosswalks = this.activeOccupiedCrosswalkIds();
+    const stage = this.intersection.stage;
+    const intersectionBox = this.intersectionBox(layout);
+    const committedPedestrians = Array.from(this.pedestrians.values())
+      .flat()
+      .filter((pedestrian) => pedestrian.committed);
 
     for (const lane of layout.lanes) {
       const laneVehicles = this.vehicles.get(lane.id) ?? [];
@@ -649,16 +892,16 @@ export class SimulationEngine {
         for (const vehicle of groupVehicles) {
           const vehicleMovementLane = this.findMovementLane(lane, vehicle);
           const route = this.getRoute(vehicleMovementLane);
-          const active = this.intersection.stage === "green" && currentAllowedMovements.has(route.id);
-          const approachGreen = this.intersection.stage === "green" && this.intersection.currentPhase.includes(lane.id);
-          const desiredGap = vehicle.minimumGap * factors.headway;
-          const comfortableGap = vehicle.comfortableGap * factors.headway;
+          const active = stage === "green" && currentAllowedMovements.has(route.id);
+          const approachGreen = stage === "green" && this.intersection.currentPhase.includes(lane.id);
+          const desiredGap = Math.max(vehicle.minimumGap, MIN_FOLLOWING_GAP * factors.headway);
+          const comfortableGap = Math.max(vehicle.comfortableGap, COMFORTABLE_FOLLOWING_GAP * factors.headway);
           const currentGap = leader ? Math.max(0, leader.progress - vehicle.progress - leader.bodyLength) : Number.POSITIVE_INFINITY;
           let allowedProgress = route.length;
           let waitReason: VehicleAgentState["waitReason"] = "clear";
 
           if (leader) {
-            allowedProgress = Math.min(allowedProgress, leader.progress - desiredGap);
+            allowedProgress = Math.min(allowedProgress, leader.progress - leader.bodyLength - desiredGap);
           }
 
           const canUseSignal = active || (approachGreen && vehicle.intent === "left");
@@ -671,12 +914,12 @@ export class SimulationEngine {
               : vehicle.intent === "right"
                 ? conflictingCrosswalks.every((crosswalkId) => !occupiedCrosswalks.has(crosswalkId))
                 : conflictingCrosswalks.every((crosswalkId) => !blockedCrosswalks.has(crosswalkId));
-          const atStopLine = vehicle.progress >= route.holdProgress - Math.max(10, vehicle.bodyLength * 0.4);
+          const atStopLine = vehicle.progress >= route.stopProgress - Math.max(10, vehicle.bodyLength * 0.4);
           const needsConflictHold = vehicle.intent !== "straight";
-          const needsExitHold = vehicle.intent !== "straight";
+          const needsExitHold = true;
 
           if (!vehicle.clearedStopLine) {
-            const holdCap = route.holdProgress;
+            const holdCap = route.stopProgress;
             if (!canUseSignal) {
               allowedProgress = Math.min(allowedProgress, holdCap);
               waitReason = "movement_red";
@@ -690,6 +933,11 @@ export class SimulationEngine {
               allowedProgress = Math.min(allowedProgress, holdCap);
               waitReason = "no_exit_space";
             }
+          }
+
+          if (this.vehicleHasCommittedPedestrianConflict(vehicleMovementLane, route, vehicle, committedPedestrians)) {
+            allowedProgress = Math.min(allowedProgress, vehicle.progress);
+            waitReason = "crosswalk";
           }
 
           if (leader && allowedProgress <= vehicle.progress + 2) {
@@ -712,16 +960,46 @@ export class SimulationEngine {
               : vehicle.turnSpeed * (vehicle.emergencyType ? 1.06 : 1);
           let targetSpeed = targetCruise * factors.speed;
 
-          if (leader) {
-            const gapRatio = Math.max(0, Math.min(1, currentGap / Math.max(comfortableGap, 1)));
-            targetSpeed *= gapRatio;
-            if (currentGap < desiredGap * 0.68) {
-              targetSpeed = 0;
-            }
-          }
+          // IDM-inspired following: handled below; remove preliminary gapRatio override.
 
           const brakingEnvelope = Math.sqrt(Math.max(0, 2 * vehicle.braking * factors.braking * distanceToConstraint));
           targetSpeed = Math.min(targetSpeed, brakingEnvelope);
+
+          if (leader) {
+            // Smooth IDM-inspired car following.
+            // s0  = hard minimum gap (stop here)
+            // sc  = comfortable gap  (full free-road speed above this)
+            // Between s0 and sc: smooth transition — match leader speed at s0, free speed at sc.
+            const s  = Math.max(0.5, currentGap);
+            const s0 = vehicle.minimumGap;
+            const sc = vehicle.comfortableGap;
+            const vL = Math.max(0, leader.speed);
+            if (s <= s0) {
+              // Within hard minimum — emergency stop
+              targetSpeed = 0;
+            } else if (s < sc) {
+              // Following regime: smoothstep blend from vL (at s0) to free speed (at sc)
+              const t = (s - s0) / Math.max(1, sc - s0);
+              const smooth = t * t * (3 - 2 * t);  // smoothstep S-curve
+              // Also account for approach rate: if closing fast, brake harder
+              const deltaV = Math.max(0, vehicle.speed - vL);
+              const brakingRoom = Math.max(0, s - s0);
+              const approachPenalty = Math.min(deltaV * deltaV / Math.max(1, 2 * brakingRoom), vehicle.speed);
+              const blendSpeed = vL + (targetSpeed - vL) * smooth;
+              targetSpeed = Math.max(0, Math.min(blendSpeed, targetSpeed) - approachPenalty * 0.35);
+            }
+            // s >= sc: no leader constraint, free-road speed unchanged
+          }
+
+          const frontBumperProgress = vehicle.progress + vehicle.bodyLength * 0.5;
+          const redAtStopLine = !canUseSignal && frontBumperProgress >= route.stopProgress - 2;
+          if (redAtStopLine) {
+            targetSpeed = 0;
+          }
+
+          if (stage === "all_red") {
+            targetSpeed = 0;
+          }
 
           if (!(pathClearAhead && (afterStop || active) && vehicle.reactionTimer >= vehicle.reactionDelay)) {
             targetSpeed = 0;
@@ -740,6 +1018,7 @@ export class SimulationEngine {
           vehicle.progress = Math.max(0, vehicle.progress);
           vehicle.clearedStopLine = vehicle.progress >= vehicle.stopProgress;
           vehicle.committed = vehicle.clearedStopLine;
+          vehicle.inBox = this.progressOccupiesIntersectionBox(route, vehicle.progress, intersectionBox);
           if (vehicle.clearedStopLine && vehicle.progress <= route.coreEndProgress) {
             reservedRouteIds.add(route.id);
           }
@@ -765,8 +1044,9 @@ export class SimulationEngine {
                   : "exiting";
 
           const { point, heading } = this.routePose(route, vehicle.progress);
-          vehicle.x = point.x;
-          vehicle.y = point.y;
+          const lockedPoint = this.lockVehicleToLaneAxis(vehicleMovementLane, route, vehicle.progress, point);
+          vehicle.x = lockedPoint.x;
+          vehicle.y = lockedPoint.y;
           vehicle.heading = heading;
           vehicle.routeLength = route.length;
           vehicle.holdProgress = route.holdProgress;
@@ -775,9 +1055,12 @@ export class SimulationEngine {
           vehicle.gapToLeader = leader ? Math.max(0, leader.progress - vehicle.progress - vehicle.bodyLength) : Number.POSITIVE_INFINITY;
           vehicle.waitReason = waitReason;
 
-          if (vehicle.progress < route.length - 4) {
+          if (vehicle.progress < route.length - 20) {
             retained.push(vehicle);
             leader = vehicle;
+          } else {
+            this.vehiclesServedCount += 1;
+            this.recentServedCount += 1;
           }
         }
       }
@@ -789,12 +1072,16 @@ export class SimulationEngine {
   private spawnPedestrians(layout: IntersectionLayout, dt: number) {
     for (const lane of layout.lanes) {
       const current = (this.pedestrianSpawnTimers.get(lane.id) ?? 0) + dt;
-      const interval = 5.8 + (this.hashLane(lane.id) % 3) * 0.6;
+      const interval = 4.8 + (this.hashLane(lane.id) % 3) * 0.55;
       if (current >= interval) {
         this.pedestrianSpawnTimers.set(lane.id, 0);
         const lanePeds = this.pedestrians.get(lane.id)!;
-        if (lanePeds.length < 4) {
-          lanePeds.push(this.createPedestrian(lane, Math.min(0.4, lanePeds.length * 0.12)));
+        const availableSlots = Math.max(0, 5 - lanePeds.length);
+        if (availableSlots > 0) {
+          const burstSize = Math.min(availableSlots, 1 + ((this.pedestrianCounter + this.hashLane(lane.id)) % 2));
+          for (let index = 0; index < burstSize; index += 1) {
+            lanePeds.push(this.createPedestrian(lane, 0.28 + index * 0.34, lanePeds.length + index));
+          }
         }
       } else {
         this.pedestrianSpawnTimers.set(lane.id, current);
@@ -820,18 +1107,30 @@ export class SimulationEngine {
             retained.push(pedestrian);
             continue;
           }
+          pedestrian.committed = true;
           pedestrian.state = "crossing";
         } else if (pedestrian.state === "crossing" || pedestrian.state === "finishing") {
-          pedestrian.progress = Math.min(1.15, pedestrian.progress + dt * 0.24 * speedFactor);
+          if (!(walkAllowed || pedestrian.committed)) {
+            retained.push(pedestrian);
+            continue;
+          }
+          // Speed profile: accelerate for first 15%, cruise, then decelerate last 15%.
+          // Committed pedestrians who see signal change rush (urgency ramp after 65%).
+          const accelPhase = pedestrian.progress < 0.15 ? pedestrian.progress / 0.15 : 1.0;
+          const decelPhase = pedestrian.progress > 0.85 ? Math.max(0.4, (1.0 - pedestrian.progress) / 0.15) : 1.0;
+          const phaseMultiplier = accelPhase * decelPhase;
+          const urgencyBoost = pedestrian.committed && pedestrian.progress > 0.65 ? 1.0 + (pedestrian.progress - 0.65) * 0.6 : 1.0;
+          pedestrian.progress = Math.min(1.24, pedestrian.progress + dt * pedestrian.speed * speedFactor * phaseMultiplier * urgencyBoost);
           pedestrian.x = pedestrian.startX + (pedestrian.endX - pedestrian.startX) * pedestrian.progress;
           pedestrian.y = pedestrian.startY + (pedestrian.endY - pedestrian.startY) * pedestrian.progress;
           if (pedestrian.progress >= 1) {
             pedestrian.state = "finishing";
           }
-          if (pedestrian.progress < 1.12) {
+          if (!this.pedestrianCompletedCrossing(pedestrian)) {
             retained.push(pedestrian);
             continue;
           }
+          pedestrian.committed = false;
           this.intersection = {
             ...this.intersection,
             pedestrianServedCount: this.intersection.pedestrianServedCount + 1,
@@ -853,11 +1152,13 @@ export class SimulationEngine {
           continue;
         }
 
-        const nearCrosswalk = vehicle.progress >= route.stopProgress - 90 && vehicle.progress <= route.coreEndProgress + 18;
-        const stillMoving = vehicle.speed > 0.08;
-        const rolledPastYield = vehicle.progress > route.holdProgress + 6;
+        const stillMoving = vehicle.speed > 0.05;
+        // Vehicle has entered the intersection box and hasn't exited yet
+        const inIntersection = vehicle.clearedStopLine && vehicle.progress <= route.coreEndProgress + 18;
 
-        if (nearCrosswalk && (stillMoving || rolledPastYield)) {
+        // Only block pedestrians when a vehicle is physically moving through the conflict zone.
+        // Approaching vehicles with green yield to committed pedestrians via vehicleHasCommittedPedestrianConflict.
+        if (inIntersection && stillMoving) {
           return false;
         }
       }
@@ -876,12 +1177,20 @@ export class SimulationEngine {
     const vehicleIndex = this.vehicleCounter;
     const clampedProgress = Math.min(initialProgress, route.stopProgress - 36);
     const pose = this.routePose(route, clampedProgress);
-    const maxSpeed = 2.15 + (vehicleIndex % 5) * 0.18;
+
+    // Pick vehicle profile (weighted: compact 20%, sedan 40%, sport 10%, SUV 20%, truck 10%)
+    const profile = VEHICLE_PROFILES[vehicleIndex % VEHICLE_PROFILES.length];
+    // Per-driver speed variation: ±20% around the profile base
+    const speedVariation = 0.82 + (vehicleIndex % 9) * 0.044;  // 0.82 → 1.17
+    const maxSpeed = profile.maxSpeedBase * speedVariation;
     const emergencyPalette: Record<EmergencyVehicleType, string> = {
       ambulance: "#f3f4f6",
       police: "#1f2937",
       fire_truck: "#c62828",
     };
+    // Reaction delay: 0.75–1.8 s. Emergency vehicles react instantly (0.25 s).
+    // Longer delays model real perception-reaction time + decision lag.
+    const reactionDelay = emergencyType ? 0.25 : 0.75 + (vehicleIndex % 7) * 0.15;
     return {
       id: `${lane.id}-${movementLane.lane}-${vehicleIndex}`,
       laneId: lane.id,
@@ -896,21 +1205,22 @@ export class SimulationEngine {
       speed: 0,
       desiredSpeed: 0,
       maxSpeed,
-      turnSpeed: maxSpeed * (movementLane.intent === "straight" ? 0.92 : movementLane.intent === "right" ? 0.72 : 0.62),
-      acceleration: 4.2 + (vehicleIndex % 4) * 0.45,
-      braking: 6.6 + (vehicleIndex % 3) * 0.55,
-      minimumGap: 29 + (vehicleIndex % 4) * 3,
-      comfortableGap: 40 + (vehicleIndex % 4) * 4,
+      turnSpeed: maxSpeed * (movementLane.intent === "straight" ? 0.93 : movementLane.intent === "right" ? 0.70 : 0.58),
+      acceleration: profile.accel,
+      braking: profile.braking,
+      minimumGap: profile.minGap,
+      comfortableGap: profile.comfortGap,
       progress: clampedProgress,
       holdProgress: route.holdProgress,
       stopProgress: route.stopProgress,
       routeLength: route.length,
       committed: false,
       clearedStopLine: false,
-      reactionDelay: 0.12 + (vehicleIndex % 5) * 0.045,
+      inBox: false,
+      reactionDelay,
       reactionTimer: 0,
-      bodyLength: 24 + (vehicleIndex % 3),
-      bodyWidth: 13 + (vehicleIndex % 2),
+      bodyLength: profile.bodyLength,
+      bodyWidth: profile.bodyWidth,
       leadVehicleId: null,
       gapToLeader: Number.POSITIVE_INFINITY,
       waitReason: "clear",
@@ -920,47 +1230,170 @@ export class SimulationEngine {
     };
   }
 
-  private createPedestrian(lane: LaneLayout, delayOffset = 0): PedestrianAgentState {
+  private createPedestrian(lane: LaneLayout, delayOffset = 0, slot = 0): PedestrianAgentState {
     this.pedestrianCounter += 1;
-    const color = ["#fac775", "#f4a460", "#d2691e", "#c68642"][this.pedestrianCounter % 4];
+    const idx = this.pedestrianCounter;
+    // Diverse skin tones + clothing colours
+    const color = ["#fac775", "#f4a460", "#d2691e", "#c68642", "#a0522d", "#e8c39e", "#f5cba7", "#b5651d"][idx % 8];
+    const stripeOffset = ((slot % 5) - 2) * 6;
+    // Speed distribution: slow elderly (0.26-0.34), average (0.38-0.46), brisk (0.50-0.58)
+    // idx % 9: 0-1 → slow, 2-5 → average, 6-7 → brisk, 8 → very slow
+    const speedTier = idx % 9;
+    const speed =
+      speedTier < 2  ? 0.28 + (speedTier % 2) * 0.04  :   // slow
+      speedTier < 6  ? 0.38 + (speedTier % 4) * 0.022 :   // average
+      speedTier < 8  ? 0.50 + (speedTier % 2) * 0.04  :   // brisk
+                       0.24;                                // very slow (elderly)
+    // Bidirectional: odd-indexed pedestrians cross in reverse direction
+    const reverse = idx % 2 === 1;
     if (lane.id === "north" || lane.id === "south") {
-      const y = lane.id === "north" ? 270 : 450;
+      const y = (lane.id === "north" ? 270 : 450) + stripeOffset;
+      const leftEdge = 372;
+      const rightEdge = 528;
+      const startX = reverse ? rightEdge : leftEdge;
+      const endX   = reverse ? leftEdge  : rightEdge;
       return {
-        id: `ped-${lane.id}-${this.pedestrianCounter}`,
+        id: `ped-${lane.id}-${idx}`,
         laneId: lane.id,
         crossingId: `cross-${lane.id}`,
-        x: 390,
+        x: startX,
         y,
-        startX: 390,
+        startX,
         startY: y,
-        endX: 510,
+        endX,
         endY: y,
-        speed: 0.5,
+        speed,
         state: "waiting",
+        committed: false,
         progress: 0,
         waitTimer: 0,
-        startDelay: 0.2 + delayOffset,
+        startDelay: delayOffset,
         color,
       };
     }
-    const x = lane.id === "east" ? 540 : 360;
+    const x = (lane.id === "east" ? 574 : 366) + stripeOffset;
+    const topEdge = 282;
+    const bottomEdge = 438;
+    const startY = reverse ? bottomEdge : topEdge;
+    const endY   = reverse ? topEdge   : bottomEdge;
     return {
-      id: `ped-${lane.id}-${this.pedestrianCounter}`,
+      id: `ped-${lane.id}-${idx}`,
       laneId: lane.id,
       crossingId: `cross-${lane.id}`,
       x,
-      y: 320,
+      y: startY,
       startX: x,
-      startY: 320,
+      startY,
       endX: x,
-      endY: 400,
-      speed: 0.5,
+      endY,
+      speed,
       state: "waiting",
+      committed: false,
       progress: 0,
       waitTimer: 0,
-      startDelay: 0.2 + delayOffset,
+      startDelay: delayOffset,
       color,
     };
+  }
+
+  private pedestrianCompletedCrossing(pedestrian: PedestrianAgentState) {
+    const buffer = 6;
+    const crossingIsHorizontal = Math.abs(pedestrian.endX - pedestrian.startX) >= Math.abs(pedestrian.endY - pedestrian.startY);
+
+    if (crossingIsHorizontal) {
+      if (pedestrian.endX >= pedestrian.startX) {
+        return pedestrian.x >= pedestrian.endX + buffer;
+      }
+      return pedestrian.x <= pedestrian.endX - buffer;
+    }
+
+    if (pedestrian.endY >= pedestrian.startY) {
+      return pedestrian.y >= pedestrian.endY + buffer;
+    }
+    return pedestrian.y <= pedestrian.endY - buffer;
+  }
+
+  private vehicleHasCommittedPedestrianConflict(
+    movementLane: MovementLaneLayout,
+    route: MovementRoute,
+    vehicle: VehicleAgentState,
+    pedestrians: PedestrianAgentState[],
+  ) {
+    if (pedestrians.length === 0) {
+      return false;
+    }
+
+    const conflictingCrosswalks = new Set(this.routeCrosswalkConflicts(route));
+    const blockingPedestrians = pedestrians.filter(
+      (pedestrian) =>
+        conflictingCrosswalks.has(pedestrian.crossingId) &&
+        pedestrian.progress >= 0.03 &&
+        pedestrian.progress <= 1.06,
+    );
+
+    if (blockingPedestrians.length === 0) {
+      return false;
+    }
+
+    if (!vehicle.clearedStopLine || vehicle.progress <= route.coreEndProgress + 24) {
+      return true;
+    }
+
+    const frontProgress = Math.min(route.length, vehicle.progress + vehicle.bodyLength * 0.5);
+    const frontPoint = this.lockVehicleToLaneAxis(movementLane, route, frontProgress, this.routePose(route, frontProgress).point);
+    const straightAheadProgress = Math.min(route.length, frontProgress + 30);
+    const straightAheadPoint = this.lockVehicleToLaneAxis(
+      movementLane,
+      route,
+      straightAheadProgress,
+      this.routePose(route, straightAheadProgress).point,
+    );
+
+    if (route.intent === "straight") {
+      const zone = this.boundingBoxFromPoints(frontPoint, straightAheadPoint, VEHICLE_COLLISION_BOX.width, VEHICLE_COLLISION_BOX.height);
+      return blockingPedestrians.some((pedestrian) => this.boxesIntersect(zone, this.pedestrianBoundingBox(pedestrian)));
+    }
+
+    const samples = 6;
+    for (let index = 0; index <= samples; index += 1) {
+      const progress = frontProgress + (index / samples) * 42;
+      const samplePoint = this.routePose(route, Math.min(route.length, progress)).point;
+      const zone = this.centeredBox(samplePoint, VEHICLE_COLLISION_BOX.width + 18, VEHICLE_COLLISION_BOX.height + 18);
+      if (blockingPedestrians.some((pedestrian) => this.boxesIntersect(zone, this.pedestrianBoundingBox(pedestrian)))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private pedestrianBoundingBox(pedestrian: PedestrianAgentState) {
+    return this.centeredBox(pedestrian, PEDESTRIAN_COLLISION_BOX.size, PEDESTRIAN_COLLISION_BOX.size);
+  }
+
+  private centeredBox(point: Point, width: number, height: number) {
+    return {
+      left: point.x - width / 2,
+      right: point.x + width / 2,
+      top: point.y - height / 2,
+      bottom: point.y + height / 2,
+    };
+  }
+
+  private boundingBoxFromPoints(start: Point, end: Point, width: number, height: number) {
+    return {
+      left: Math.min(start.x, end.x) - width / 2,
+      right: Math.max(start.x, end.x) + width / 2,
+      top: Math.min(start.y, end.y) - height / 2,
+      bottom: Math.max(start.y, end.y) + height / 2,
+    };
+  }
+
+  private boxesIntersect(
+    first: { left: number; right: number; top: number; bottom: number },
+    second: { left: number; right: number; top: number; bottom: number },
+  ) {
+    return !(first.right < second.left || first.left > second.right || first.bottom < second.top || first.top > second.bottom);
   }
 
   private signalSnapshot(layout: IntersectionLayout, laneLayout: LaneLayout, x: number, y: number): SceneSignalSnapshot {
@@ -1247,6 +1680,37 @@ export class SimulationEngine {
     };
   }
 
+  private lockVehicleToLaneAxis(
+    movementLane: MovementLaneLayout,
+    route: MovementRoute,
+    progress: number,
+    point: Point,
+  ) {
+    const locked = { ...point };
+    const onApproach = progress <= route.stopProgress + 1;
+    const onStraightRoute = route.intent === "straight";
+    const onExit = progress >= route.coreEndProgress - 12;
+    const exitPoint = this.routeEndPoint(movementLane);
+
+    if ((movementLane.laneId === "north" || movementLane.laneId === "south") && (onApproach || onStraightRoute)) {
+      locked.x = movementLane.centerX;
+    }
+
+    if ((movementLane.laneId === "east" || movementLane.laneId === "west") && (onApproach || onStraightRoute)) {
+      locked.y = movementLane.centerY;
+    }
+
+    if (onExit) {
+      if (route.exitLaneId === "north" || route.exitLaneId === "south") {
+        locked.x = exitPoint.x;
+      } else {
+        locked.y = exitPoint.y;
+      }
+    }
+
+    return locked;
+  }
+
   private routePoint(route: MovementRoute, progress: number) {
     const clamped = Math.max(0, Math.min(progress, route.length));
     let index = 1;
@@ -1314,7 +1778,7 @@ export class SimulationEngine {
   }
 
   private exitLaneHasRoom(layout: IntersectionLayout, candidate: MovementRoute, vehicle: VehicleAgentState) {
-    const clearance = vehicle.minimumGap + vehicle.bodyLength + 34;
+    const exitZone = this.exitZoneForRoute(candidate, vehicle.bodyLength);
     for (const lane of layout.lanes) {
       for (const other of this.vehicles.get(lane.id) ?? []) {
         if (other.id === vehicle.id) {
@@ -1324,12 +1788,63 @@ export class SimulationEngine {
         if (route.exitLaneId !== candidate.exitLaneId) {
           continue;
         }
-        if (other.progress >= route.stopProgress && other.progress <= route.stopProgress + clearance) {
+        const otherPoint = this.routePose(route, other.progress).point;
+        const otherStopped = other.speed < 0.12;
+        if (otherStopped && this.boxesIntersect(exitZone, this.centeredBox(otherPoint, other.bodyWidth, other.bodyLength))) {
           return false;
         }
       }
     }
     return true;
+  }
+
+  private intersectionBox(layout: IntersectionLayout) {
+    const verticalRoad = layout.roads.find((road) => road.height > road.width);
+    const horizontalRoad = layout.roads.find((road) => road.width > road.height);
+
+    if (verticalRoad && horizontalRoad) {
+      return {
+        left: Math.max(verticalRoad.x, horizontalRoad.x),
+        right: Math.min(verticalRoad.x + verticalRoad.width, horizontalRoad.x + horizontalRoad.width),
+        top: Math.max(verticalRoad.y, horizontalRoad.y),
+        bottom: Math.min(verticalRoad.y + verticalRoad.height, horizontalRoad.y + horizontalRoad.height),
+      };
+    }
+
+    return { left: 390, right: 510, top: 300, bottom: 420 };
+  }
+
+  private progressOccupiesIntersectionBox(
+    route: MovementRoute,
+    progress: number,
+    intersectionBox: { left: number; right: number; top: number; bottom: number },
+  ) {
+    if (progress < route.stopProgress || progress > route.coreEndProgress) {
+      return false;
+    }
+    const point = this.routePose(route, progress).point;
+    return (
+      point.x >= intersectionBox.left &&
+      point.x <= intersectionBox.right &&
+      point.y >= intersectionBox.top &&
+      point.y <= intersectionBox.bottom
+    );
+  }
+
+  private exitZoneForRoute(route: MovementRoute, vehicleLength: number) {
+    const exitPoint = this.routePose(route, route.coreEndProgress + Math.max(vehicleLength * 0.5, 12)).point;
+    const depth = vehicleLength + 10;
+
+    if (route.exitLaneId === "north") {
+      return { left: exitPoint.x - 10, right: exitPoint.x + 10, top: exitPoint.y - depth, bottom: exitPoint.y + 8 };
+    }
+    if (route.exitLaneId === "south") {
+      return { left: exitPoint.x - 10, right: exitPoint.x + 10, top: exitPoint.y - 8, bottom: exitPoint.y + depth };
+    }
+    if (route.exitLaneId === "east") {
+      return { left: exitPoint.x - 8, right: exitPoint.x + depth, top: exitPoint.y - 10, bottom: exitPoint.y + 10 };
+    }
+    return { left: exitPoint.x - depth, right: exitPoint.x + 8, top: exitPoint.y - 10, bottom: exitPoint.y + 10 };
   }
 
   private lookupRouteById(layout: IntersectionLayout, routeId: string) {

@@ -1,5 +1,5 @@
 import { IntersectionType, LaneId, MovementLane, TurnIntent, WeatherMode } from "@/lib/simulation/domain/enums";
-import { ControllerMode, EmergencyVehicleType, SimulationWeights } from "@/lib/simulation/domain/models";
+import { ComparisonStats, ControllerMode, EmergencyVehicleType, MetricSample, ScenarioPreset, SimulationWeights } from "@/lib/simulation/domain/models";
 
 export type DashboardLaneSnapshot = {
   id: LaneId;
@@ -48,6 +48,11 @@ export type DashboardSnapshot = {
     phaseScores: Array<{ key: string; score: number }>;
     emergencyServedCount: number;
     pedestrianServedCount: number;
+    vehiclesServedCount: number;
+    metricsHistory: MetricSample[];
+    activeScenario: ScenarioPreset;
+    isFixedCycle: boolean;
+    comparison: ComparisonStats;
   };
 };
 
@@ -64,11 +69,14 @@ export type SceneVehicleSnapshot = {
   committed: boolean;
   brakeLights: boolean;
   progress: number;
+  inBox: boolean;
   leadVehicleId: string | null;
   gapToLeader: number;
   waitReason: string;
   emergencyType: EmergencyVehicleType | null;
   emergencyDetected: boolean;
+  bodyLength: number;
+  bodyWidth: number;
 };
 
 export type ScenePedestrianSnapshot = {
@@ -77,6 +85,9 @@ export type ScenePedestrianSnapshot = {
   x: number;
   y: number;
   color: string;
+  progress: number;
+  committed: boolean;
+  state: string;
 };
 
 export type SceneRoadRectSnapshot = {

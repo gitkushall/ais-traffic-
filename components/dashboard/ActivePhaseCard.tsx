@@ -45,6 +45,12 @@ function readableWaitReason(waitReason: string) {
 }
 
 export function ActivePhaseCard({ phase, weatherLabel, analytics, compact = false, scene }: ActivePhaseCardProps) {
+  const stageTimerLabel =
+    phase.stageLabel === "YELLOW"
+      ? "Yellow remaining"
+      : phase.stageLabel === "ALL RED"
+        ? "All-red remaining"
+        : "Green remaining";
   const emergencySummary = phase.emergency.detected
     ? `${phase.emergency.type?.replaceAll("_", " ")} on ${phase.emergency.laneId} ${phase.emergency.movementLane}`
     : "No active emergency vehicle";
@@ -89,7 +95,7 @@ export function ActivePhaseCard({ phase, weatherLabel, analytics, compact = fals
           <p className="phase-subtitle">Next up: {phase.nextLabel}</p>
         </div>
         <div className="phase-timer">
-          <span>Green remaining</span>
+          <span>{stageTimerLabel}</span>
           <strong>{phase.greenRemaining.toFixed(1)}s</strong>
         </div>
       </div>

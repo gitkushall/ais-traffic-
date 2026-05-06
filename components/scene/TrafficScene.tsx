@@ -90,52 +90,100 @@ function darken(color: string, amount: number) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+function hashNumber(input: string) {
+  let hash = 0;
+  for (const char of input) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 997;
+  }
+  return hash;
+}
+
 function drawLaneVehicles(lane: DisplayLane) {
-  return lane.vehicles.map((vehicle) => (
-    <g key={vehicle.id} transform={`translate(${vehicle.x} ${vehicle.y}) rotate(${vehicle.displayHeading})`}>
-      <ellipse cx="1" cy="8" fill="rgba(0,0,0,0.14)" rx="11" ry="4.5" />
-      <rect
-        fill={vehicle.color}
-        height={14}
-        opacity={vehicle.committed ? 1 : 0.97}
-        rx={4}
-        ry={4}
-        stroke="rgba(8,12,18,0.44)"
-        strokeWidth="0.8"
-        width={26}
-        x={-13}
-        y={-7}
-      />
-      <rect fill={darken(vehicle.color, 0.26)} height={9} rx={3} ry={3} width={15} x={-4} y={-4.5} />
-      <rect fill="rgba(232,238,245,0.9)" height={5} rx={2} ry={2} width={7} x={4.8} y={-2.5} />
-      <rect fill="rgba(136,148,164,0.82)" height={4.5} rx={2} ry={2} width={5.5} x={-8.8} y={-2.25} />
-      <rect fill="rgba(255,255,255,0.12)" height={10} rx={3} width={2} x={-10} y={-5} />
-      {vehicle.emergencyType ? (
-        <>
-          <rect fill="rgba(255,255,255,0.9)" height={2.4} rx={1.1} width={8} x={-1.5} y={-6.8} />
-          <rect fill="#4aa3ff" height={1.9} rx={0.9} width={3.3} x={-1.1} y={-6.55} />
-          <rect fill="#ff4d4d" height={1.9} rx={0.9} width={3.3} x={2.0} y={-6.55} />
-          <rect
-            fill="none"
-            height={16.4}
-            rx={4.6}
-            ry={4.6}
-            stroke={vehicle.emergencyDetected ? "rgba(255,215,0,0.85)" : "rgba(255,255,255,0.42)"}
-            strokeWidth={vehicle.emergencyDetected ? 1.3 : 1}
-            width={28.4}
-            x={-14.2}
-            y={-8.2}
-          />
-        </>
-      ) : null}
-      {vehicle.brakeLights ? (
-        <>
-          <rect fill="#ff4d4d" height={2.5} rx={1} width={3} x={-11.5} y={-4.5} />
-          <rect fill="#ff4d4d" height={2.5} rx={1} width={3} x={-11.5} y={2} />
-        </>
-      ) : null}
-    </g>
-  ));
+  return lane.vehicles.map((vehicle) => {
+    // Use actual body dimensions from the simulation engine
+    const bl = vehicle.bodyLength ?? 24;  // length along direction of travel
+    const bw = vehicle.bodyWidth  ?? 13;  // width perpendicular to travel
+    const hw = bl / 2;                    // half-length
+    const hh = bw / 2;                    // half-width
+    const isTruck = bl >= 30;
+    const isCompact = bl <= 21;
+    // Windshield: front portion of roof
+    const wsX  = hw * 0.18;
+    const wsW  = hw * 0.52;
+    const wsH  = Math.max(3.5, bw * 0.46);
+    // Cabin/roof area
+    const roofX = -hw * 0.06;
+    const roofW = isTruck ? hw * 0.55 : hw * 0.62;
+    return (
+      <g key={vehicle.id} transform={`translate(${vehicle.x} ${vehicle.y}) rotate(${vehicle.displayHeading})`}>
+        {/* Drop shadow */}
+        <ellipse cx={hw * 0.04} cy={hh * 0.6} fill="rgba(0,0,0,0.15)" rx={hw * 0.82} ry={hh * 0.38} />
+        {/* Body */}
+        <rect
+          fill={vehicle.color}
+          height={bw}
+          opacity={vehicle.committed ? 1 : 0.97}
+          rx={isCompact ? 3.5 : isTruck ? 2.5 : 4}
+          ry={isCompact ? 3.5 : isTruck ? 2.5 : 4}
+          stroke="rgba(8,12,18,0.44)"
+          strokeWidth="0.8"
+          width={bl}
+          x={-hw}
+          y={-hh}
+        />
+        {/* Roof / cabin */}
+        {isTruck ? (
+          // Truck: flat cargo bed + short cab
+          <>
+            <rect fill={darken(vehicle.color, 0.18)} height={bw * 0.72} rx={2} ry={2} width={hw * 0.48} x={-hw * 0.1} y={-hh * 0.72} />
+            <rect fill={darken(vehicle.color, 0.30)} height={bw * 0.68} rx={2.5} ry={2.5} width={hw * 0.42} x={hw * 0.44} y={-hh * 0.68} />
+          </>
+        ) : (
+          <rect fill={darken(vehicle.color, 0.26)} height={bw * 0.7} rx={3} ry={3} width={roofW} x={roofX} y={-hh * 0.7} />
+        )}
+        {/* Windshield */}
+        <rect fill="rgba(232,238,245,0.88)" height={wsH} rx={1.8} ry={1.8} width={wsW} x={wsX} y={-wsH / 2} />
+        {/* Rear window */}
+        <rect fill="rgba(136,148,164,0.80)" height={Math.max(3, bw * 0.4)} rx={1.5} ry={1.5} width={hw * 0.42} x={-hw * 0.7} y={-(bw * 0.2)} />
+        {/* Side stripe / panel line */}
+        <rect fill="rgba(255,255,255,0.10)" height={bw * 0.75} rx={2} width={1.8} x={-hw * 0.78} y={-hh * 0.75} />
+        {/* Emergency lightbar */}
+        {vehicle.emergencyType ? (
+          <>
+            <rect fill="rgba(255,255,255,0.9)" height={2.4} rx={1.1} width={bl * 0.30} x={-bl * 0.15} y={-hh - 2.2} />
+            <rect fill="#4aa3ff" height={1.9} rx={0.9} width={bl * 0.13} x={-bl * 0.13} y={-hh - 1.95} />
+            <rect fill="#ff4d4d" height={1.9} rx={0.9} width={bl * 0.13} x={bl * 0.01} y={-hh - 1.95} />
+            <rect
+              fill="none"
+              height={bw + 2.8}
+              rx={isCompact ? 4 : 5}
+              ry={isCompact ? 4 : 5}
+              stroke={vehicle.emergencyDetected ? "rgba(255,215,0,0.88)" : "rgba(255,255,255,0.40)"}
+              strokeWidth={vehicle.emergencyDetected ? 1.4 : 1}
+              width={bl + 2.8}
+              x={-hw - 1.4}
+              y={-hh - 1.4}
+            />
+          </>
+        ) : null}
+        {/* Brake lights */}
+        {vehicle.brakeLights ? (
+          <>
+            <rect fill="#ff3b30" height={bw * 0.22} rx={1} width={bl * 0.10} x={-hw - 0.5} y={-hh * 0.58} />
+            <rect fill="#ff3b30" height={bw * 0.22} rx={1} width={bl * 0.10} x={-hw - 0.5} y={hh * 0.28} />
+          </>
+        ) : (
+          <>
+            <rect fill="rgba(120,30,20,0.55)" height={bw * 0.18} rx={0.8} width={bl * 0.09} x={-hw} y={-hh * 0.55} />
+            <rect fill="rgba(120,30,20,0.55)" height={bw * 0.18} rx={0.8} width={bl * 0.09} x={-hw} y={hh * 0.28} />
+          </>
+        )}
+        {/* Headlights (front) */}
+        <rect fill="rgba(240,230,180,0.80)" height={bw * 0.18} rx={0.8} width={bl * 0.08} x={hw - bl * 0.08} y={-hh * 0.55} />
+        <rect fill="rgba(240,230,180,0.80)" height={bw * 0.18} rx={0.8} width={bl * 0.08} x={hw - bl * 0.08} y={hh * 0.28} />
+      </g>
+    );
+  });
 }
 
 function weatherOverlay(scene: SceneSnapshot) {
@@ -236,9 +284,12 @@ function useInterpolatedScene(scene: SceneSnapshot) {
               const nextProgress = existing.displayProgress + (vehicle.progress - existing.displayProgress) * alpha;
               const route = routeMetrics.get(vehicle.pathId);
               const routePose = route ? poseAlongRoute(route, nextProgress) : null;
-              const nextX = routePose?.point.x ?? existing.x + (vehicle.x - existing.x) * alpha;
-              const nextY = routePose?.point.y ?? existing.y + (vehicle.y - existing.y) * alpha;
-              const targetHeading = routePose?.heading ?? vehicle.heading;
+              const nextX = existing.x + (vehicle.x - existing.x) * alpha;
+              const nextY = existing.y + (vehicle.y - existing.y) * alpha;
+              const targetHeading =
+                vehicle.intent === "straight"
+                  ? vehicle.heading
+                  : routePose?.heading ?? vehicle.heading;
               const nextHeading = smoothAngle(existing.displayHeading ?? existing.heading, targetHeading, 0.22);
               if (Math.abs(nextX - vehicle.x) > 0.2 || Math.abs(nextY - vehicle.y) > 0.2 || Math.abs(wrapAngle(nextHeading - vehicle.heading)) > 0.4) {
                 moving = true;
@@ -441,14 +492,28 @@ export function TrafficScene({ scene, mode = "full" }: TrafficSceneProps) {
             </g>
           ))}
 
-          {displayPedestrians.map((pedestrian) => (
-            <g key={pedestrian.id} transform={`translate(${pedestrian.x} ${pedestrian.y}) rotate(${pedestrian.heading})`}>
-              <ellipse cx="1" cy="5" fill="rgba(0,0,0,0.18)" rx="5.5" ry="3.2" />
-              <ellipse cx="0" cy="3.2" fill={pedestrian.color} rx="4.2" ry="5.2" />
-              <circle cx="0" cy="-3.2" fill="#f1c27d" r="3.4" />
-              <rect fill="rgba(255,255,255,0.15)" height="3.5" rx="1.2" width="2.4" x="-1.2" y="2.4" />
-            </g>
-          ))}
+          {displayPedestrians.map((pedestrian) => {
+            const strideSeed = (hashNumber(pedestrian.id) % 7) / 7;
+            const stride = Math.sin((pedestrian.progress * 10 + strideSeed) * Math.PI * 2);
+            const armSwing = stride * 2.1;
+            const legSwing = stride * 2.7;
+            const torsoTilt = pedestrian.committed ? stride * 1.4 : stride * 0.7;
+            const bodyScale = pedestrian.committed ? 1.03 : pedestrian.state === "waiting" ? 0.96 : 1;
+            return (
+              <g key={pedestrian.id} transform={`translate(${pedestrian.x} ${pedestrian.y}) rotate(${pedestrian.heading}) scale(${bodyScale})`}>
+                <ellipse cx="1" cy="6.5" fill="rgba(0,0,0,0.16)" rx="5.8" ry="3.1" />
+                <g transform={`rotate(${torsoTilt})`}>
+                  <line stroke={darken(pedestrian.color, 0.1)} strokeLinecap="round" strokeWidth="1.7" x1="-1.8" x2={-1.8 - armSwing} y1="1.2" y2="5.4" />
+                  <line stroke={darken(pedestrian.color, 0.1)} strokeLinecap="round" strokeWidth="1.7" x1="1.8" x2={1.8 + armSwing} y1="1.2" y2="5.4" />
+                  <ellipse cx="0" cy="1.8" fill={pedestrian.color} rx="4.3" ry="5.4" />
+                  <rect fill="rgba(255,255,255,0.18)" height="3.8" rx="1.3" width="2.2" x="-1.1" y="1.4" />
+                  <circle cx="0" cy="-4" fill="#f1c27d" r="3.35" />
+                  <line stroke="#3f2d23" strokeLinecap="round" strokeWidth="1.5" x1="-1.2" x2={-2.3 - legSwing} y1="6.2" y2="10.8" />
+                  <line stroke="#3f2d23" strokeLinecap="round" strokeWidth="1.5" x1="1.2" x2={2.3 + legSwing} y1="6.2" y2="10.8" />
+                </g>
+              </g>
+            );
+          })}
 
           {displayScene.signals.map((signal) => (
             <g key={signal.id}>

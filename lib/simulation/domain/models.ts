@@ -16,7 +16,17 @@ export type ControllerMode =
   | "emergency_requested"
   | "preempt_transition"
   | "emergency_serving"
-  | "recovery";
+  | "recovery"
+  | "fixed_cycle";
+
+export type ComparisonStats = {
+  adaptiveThroughput: number;
+  fixedThroughput: number;
+  adaptiveAvgWait: number;
+  fixedAvgWait: number;
+  adaptiveQueue: number;
+  fixedQueue: number;
+};
 
 export type EmergencyPriorityState = {
   vehicleId: string;
@@ -114,6 +124,7 @@ export type VehicleAgentState = {
   routeLength: number;
   committed: boolean;
   clearedStopLine: boolean;
+  inBox: boolean;
   reactionDelay: number;
   reactionTimer: number;
   bodyLength: number;
@@ -138,10 +149,20 @@ export type PedestrianAgentState = {
   endY: number;
   speed: number;
   state: PedestrianState;
+  committed: boolean;
   progress: number;
   waitTimer: number;
   startDelay: number;
   color: string;
+};
+
+export type ScenarioPreset = "normal" | "rush_hour" | "off_peak" | "event_surge";
+
+export type MetricSample = {
+  tick: number;
+  vehiclesServed: number;
+  avgWaitSeconds: number;
+  totalQueue: number;
 };
 
 export type SimulationCommand =
@@ -151,4 +172,6 @@ export type SimulationCommand =
   | { type: "setSpeed"; speed: number }
   | { type: "setWeights"; weights: SimulationWeights }
   | { type: "cycleWeather" }
-  | { type: "spawnEmergency" };
+  | { type: "spawnEmergency" }
+  | { type: "setScenario"; scenario: ScenarioPreset }
+  | { type: "toggleControllerMode" };

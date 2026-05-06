@@ -8,6 +8,13 @@ export type PhaseScore = {
   phase: LaneId[];
   allowedMovements: string[];
   score: number;
+  rankedPhases: Array<{
+    key: string;
+    label: string;
+    phase: LaneId[];
+    allowedMovements: string[];
+    score: number;
+  }>;
   scores: Record<string, number>;
   queues: Record<string, number>;
   waits: Record<string, number>;
@@ -38,6 +45,7 @@ export class ScoringEngine {
     const laneMap = new Map(lanes.map((lane) => [lane.id, lane]));
     let bestPhase = layout.phases[0];
     let bestScore = -1;
+    const rankedPhases: PhaseScore["rankedPhases"] = [];
     const scores: Record<string, number> = {};
     const queues: Record<string, number> = {};
     const waits: Record<string, number> = {};
@@ -69,6 +77,13 @@ export class ScoringEngine {
             ? "pedestrian"
             : "density";
       const phaseKey = phase.key;
+      rankedPhases.push({
+        key: phase.key,
+        label: phase.label,
+        phase: phase.approaches,
+        allowedMovements: phase.allowedMovements,
+        score: total,
+      });
       scores[phaseKey] = total;
       queues[phaseKey] = queue;
       waits[phaseKey] = Math.max(wait, laneWait);
@@ -91,6 +106,7 @@ export class ScoringEngine {
       phase: bestPhase.approaches,
       allowedMovements: bestPhase.allowedMovements,
       score: bestScore,
+      rankedPhases: rankedPhases.sort((a, b) => b.score - a.score),
       scores,
       queues,
       waits,

@@ -1,31 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import { Dashboard } from "@/components/dashboard/Dashboard";
-import { TrafficScene } from "@/components/scene/TrafficScene";
-import { SimulationSnapshot } from "@/lib/simulation/domain/snapshots";
-import { simulationStore as store } from "@/lib/store/simulation-client-store";
+import { TrafficCanvas } from "@/components/scene/TrafficCanvas";
+import { useSimulationWorker } from "@/lib/hooks/use-simulation-worker";
 
 export default function Page() {
-  const [snapshot, setSnapshot] = useState<SimulationSnapshot>(store.getSnapshot());
+  const { frameRef, snapshot, dispatch } = useSimulationWorker();
 
-  useEffect(() => {
-    const unsubscribe = store.subscribe(setSnapshot);
-    store.start();
-    return () => {
-      unsubscribe();
-    };
-  }, []);
+  const caption = snapshot
+    ? `CAM-01 ● ${snapshot.dashboard.intersectionType.toUpperCase()} | ${snapshot.dashboard.phase.currentLabel} | ${snapshot.dashboard.phase.stageLabel}`
+    : "CAM-01 ● Loading…";
 
   return (
     <main className="page-shell">
       <div className="app-shell">
         <section className="scene-shell">
-          <TrafficScene scene={snapshot.scene} />
+          <TrafficCanvas frameRef={frameRef} caption={caption} />
         </section>
         <aside className="dashboard-shell">
-          <Dashboard mode="compact" snapshot={snapshot} dispatch={store.dispatch} />
+          {snapshot ? (
+            <Dashboard mode="compact" snapshot={snapshot} dispatch={dispatch} />
+          ) : (
+            <div className="dashboard-loading">Initialising simulation…</div>
+          )}
         </aside>
       </div>
     </main>

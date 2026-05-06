@@ -34,6 +34,10 @@ export class SignalController {
         intersection.controllerMode === "preempt_transition" ||
         intersection.controllerMode === "emergency_requested");
     const normalMode = recoveringFromEmergency ? "recovery" : emergency ? "emergency_requested" : "normal_adaptive";
+    const currentApproaches = new Set(intersection.currentPhase);
+    const bestCrossCorridorPhase =
+      decision.rankedPhases.find((phase) => phase.phase.every((approach) => !currentApproaches.has(approach))) ?? null;
+    const bestCompetingPhase = decision.rankedPhases.find((phase) => phase.key !== intersection.currentPhaseKey) ?? null;
 
     if (intersection.stage === "green") {
       greenRemaining = Math.max(0, intersection.greenRemaining - dtSeconds);
@@ -76,12 +80,17 @@ export class SignalController {
       } else if (activePhaseElapsed >= this.maximumGreenSeconds) {
         nextStage = "amber";
         greenRemaining = this.amberSeconds;
-        nextPhase = decision.phase;
-        nextPhaseKey = decision.key;
-        nextPhaseLabel = decision.label;
-        nextAllowedMovements = decision.allowedMovements;
+        nextPhase = bestCrossCorridorPhase?.phase ?? bestCompetingPhase?.phase ?? decision.phase;
+        nextPhaseKey = bestCrossCorridorPhase?.key ?? bestCompetingPhase?.key ?? decision.key;
+        nextPhaseLabel = bestCrossCorridorPhase?.label ?? bestCompetingPhase?.label ?? decision.label;
+        nextAllowedMovements = bestCrossCorridorPhase?.allowedMovements ?? bestCompetingPhase?.allowedMovements ?? decision.allowedMovements;
         controllerMode = normalMode;
-        controllerReason = "Maximum green reached, reevaluating corridor demand";
+        controllerReason =
+          bestCrossCorridorPhase
+            ? "Maximum green reached, rotating service to the opposing corridor"
+            : bestCompetingPhase && bestCompetingPhase.key !== intersection.currentPhaseKey
+            ? "Maximum green reached, rotating service to competing demand"
+            : "Maximum green reached, reevaluating corridor demand";
       } else if (decision.key === intersection.currentPhaseKey) {
         greenRemaining = Math.max(
           greenRemaining,
@@ -96,7 +105,7 @@ export class SignalController {
     } else if (intersection.stage === "amber") {
       greenRemaining = Math.max(0, intersection.greenRemaining - dtSeconds);
       controllerMode = emergency ? "preempt_transition" : controllerMode;
-      controllerReason = emergency ? "Emergency amber clearance" : "Amber clearance";
+      controllerReason = emergency ? "Emergency yellow clearance" : "Yellow clearance";
       if (greenRemaining <= 0) {
         nextStage = "all_red";
         greenRemaining = this.allRedSeconds;

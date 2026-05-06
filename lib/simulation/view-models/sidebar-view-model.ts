@@ -1,6 +1,12 @@
 import { WeatherMode } from "@/lib/simulation/domain/enums";
-import { IntersectionState, SimulationWeights } from "@/lib/simulation/domain/models";
+import { ComparisonStats, IntersectionState, MetricSample, ScenarioPreset, SimulationWeights } from "@/lib/simulation/domain/models";
 import { DashboardSnapshot } from "@/lib/simulation/domain/snapshots";
+
+function stageDisplayLabel(stage: IntersectionState["stage"]) {
+  if (stage === "amber") return "YELLOW";
+  if (stage === "all_red") return "ALL RED";
+  return "GREEN";
+}
 
 export function createSidebarSnapshot(
   intersection: IntersectionState,
@@ -9,6 +15,15 @@ export function createSidebarSnapshot(
   debug: boolean,
   speed: number,
   weather: WeatherMode,
+  vehiclesServedCount = 0,
+  metricsHistory: MetricSample[] = [],
+  activeScenario: ScenarioPreset = "normal",
+  isFixedCycle = false,
+  comparison: ComparisonStats = {
+    adaptiveThroughput: 0, fixedThroughput: 0,
+    adaptiveAvgWait: 0, fixedAvgWait: 0,
+    adaptiveQueue: 0, fixedQueue: 0,
+  },
 ): DashboardSnapshot {
   const phaseScores = Object.entries(intersection.phaseScores)
     .map(([key, score]) => ({ key, score }))
@@ -29,10 +44,13 @@ export function createSidebarSnapshot(
       currentLabel: intersection.currentPhaseLabel || "None",
       nextLabel: intersection.nextPhaseLabel || "None",
       greenRemaining: intersection.greenRemaining,
-      stageLabel: intersection.stage.toUpperCase(),
+      stageLabel: stageDisplayLabel(intersection.stage),
       reason: intersection.controllerReason,
       controllerMode: intersection.controllerMode,
-      preemptionActive: intersection.controllerMode === "emergency_requested" || intersection.controllerMode === "preempt_transition" || intersection.controllerMode === "emergency_serving",
+      preemptionActive:
+        intersection.controllerMode === "emergency_requested" ||
+        intersection.controllerMode === "preempt_transition" ||
+        intersection.controllerMode === "emergency_serving",
       emergency: {
         detected: !!intersection.emergencyState,
         type: intersection.emergencyState?.type ?? null,
@@ -44,20 +62,19 @@ export function createSidebarSnapshot(
         .filter(([, state]) => state === "walk")
         .map(([crossingId]) => crossingId.replace("cross-", "")),
     },
-    controls: {
-      running,
-      debug,
-      speed,
-      weights,
-      weather,
-    },
+    controls: { running, debug, speed, weights, weather },
     weatherLabel: weather.replace("_", " "),
     analytics: {
       tick: intersection.tick,
-      stage: intersection.stage.toUpperCase(),
+      stage: stageDisplayLabel(intersection.stage),
       phaseScores,
       emergencyServedCount: intersection.emergencyServedCount,
       pedestrianServedCount: intersection.pedestrianServedCount,
+      vehiclesServedCount,
+      metricsHistory,
+      activeScenario,
+      isFixedCycle,
+      comparison,
     },
   };
 }

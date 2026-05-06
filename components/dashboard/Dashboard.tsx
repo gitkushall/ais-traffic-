@@ -7,6 +7,9 @@ import { LaneScoresCard } from "@/components/dashboard/LaneScoresCard";
 import { ActivePhaseCard } from "@/components/dashboard/ActivePhaseCard";
 import { ControlsCard } from "@/components/dashboard/ControlsCard";
 import { SelectorCard } from "@/components/dashboard/SelectorCard";
+import { MetricsChart } from "@/components/dashboard/MetricsChart";
+import { ScenarioCard } from "@/components/dashboard/ScenarioCard";
+import { ComparisonPanel } from "@/components/dashboard/ComparisonPanel";
 import { SimulationSnapshot } from "@/lib/simulation/domain/snapshots";
 import { SimulationCommand } from "@/lib/simulation/domain/models";
 
@@ -125,12 +128,29 @@ export function Dashboard({ snapshot, dispatch, mode = "full" }: DashboardProps)
               onSelect={(intersectionType) => dispatch({ type: "setIntersectionType", intersectionType })}
             />
           ) : null}
+          {!isCompact ? (
+            <ScenarioCard
+              activeScenario={snapshot.dashboard.analytics.activeScenario}
+              dispatch={dispatch}
+            />
+          ) : null}
+          {!isCompact ? (
+            <ComparisonPanel
+              isFixedCycle={snapshot.dashboard.analytics.isFixedCycle}
+              comparison={snapshot.dashboard.analytics.comparison}
+              dispatch={dispatch}
+            />
+          ) : null}
           <ActivePhaseCard
             phase={snapshot.dashboard.phase}
             weatherLabel={snapshot.dashboard.weatherLabel}
             analytics={snapshot.dashboard.analytics}
             compact={isCompact}
             scene={snapshot.scene}
+          />
+          <MetricsChart
+            history={snapshot.dashboard.analytics.metricsHistory}
+            vehiclesServedCount={snapshot.dashboard.analytics.vehiclesServedCount}
           />
           <LaneScoresCard lanes={snapshot.dashboard.lanes} compact={isCompact} />
         </div>
