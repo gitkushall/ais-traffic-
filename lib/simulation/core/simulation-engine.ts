@@ -907,6 +907,8 @@ export class SimulationEngine {
           const canUseSignal = active || (approachGreen && vehicle.intent === "left");
           const exitClear = this.exitLaneHasRoom(layout, route, vehicle);
           const routeReserved = this.routeCanEnter(layout, route, reservedRouteIds);
+          const frontBumperProgress = vehicle.progress + vehicle.bodyLength * 0.5;
+          const hasEnteredIntersection = vehicle.committed || frontBumperProgress >= route.stopProgress + 2;
           const conflictingCrosswalks = this.routeCrosswalkConflicts(route);
           const protectedCrosswalk =
             vehicle.intent === "straight"
@@ -918,7 +920,7 @@ export class SimulationEngine {
           const needsConflictHold = vehicle.intent !== "straight";
           const needsExitHold = true;
 
-          if (!vehicle.clearedStopLine) {
+          if (!hasEnteredIntersection) {
             const holdCap = route.stopProgress;
             if (!canUseSignal) {
               allowedProgress = Math.min(allowedProgress, holdCap);
@@ -935,7 +937,7 @@ export class SimulationEngine {
             }
           }
 
-          if (this.vehicleHasCommittedPedestrianConflict(vehicleMovementLane, route, vehicle, committedPedestrians)) {
+          if (!hasEnteredIntersection && this.vehicleHasCommittedPedestrianConflict(vehicleMovementLane, route, vehicle, committedPedestrians)) {
             allowedProgress = Math.min(allowedProgress, vehicle.progress);
             waitReason = "crosswalk";
           }
@@ -952,7 +954,7 @@ export class SimulationEngine {
             vehicle.reactionTimer = 0;
           }
 
-          const afterStop = vehicle.progress >= vehicle.stopProgress;
+          const afterStop = hasEnteredIntersection;
           const emergencySpeedFactor = vehicle.emergencyType ? 1.12 : 1;
           const targetCruise =
             vehicle.intent === "straight" || vehicle.progress > vehicle.stopProgress + 160
@@ -991,13 +993,12 @@ export class SimulationEngine {
             // s >= sc: no leader constraint, free-road speed unchanged
           }
 
-          const frontBumperProgress = vehicle.progress + vehicle.bodyLength * 0.5;
-          const redAtStopLine = !canUseSignal && frontBumperProgress >= route.stopProgress - 2;
+          const redAtStopLine = !hasEnteredIntersection && !canUseSignal && frontBumperProgress >= route.stopProgress - 2;
           if (redAtStopLine) {
             targetSpeed = 0;
           }
 
-          if (stage === "all_red") {
+          if (!hasEnteredIntersection && stage === "all_red") {
             targetSpeed = 0;
           }
 
@@ -1017,7 +1018,7 @@ export class SimulationEngine {
           vehicle.progress = Math.min(allowedProgress, vehicle.progress + step);
           vehicle.progress = Math.max(0, vehicle.progress);
           vehicle.clearedStopLine = vehicle.progress >= vehicle.stopProgress;
-          vehicle.committed = vehicle.clearedStopLine;
+          vehicle.committed = vehicle.committed || vehicle.progress + vehicle.bodyLength * 0.5 >= vehicle.stopProgress + 2;
           vehicle.inBox = this.progressOccupiesIntersectionBox(route, vehicle.progress, intersectionBox);
           if (vehicle.clearedStopLine && vehicle.progress <= route.coreEndProgress) {
             reservedRouteIds.add(route.id);
@@ -1116,7 +1117,7 @@ export class SimulationEngine {
           }
           // Speed profile: accelerate for first 15%, cruise, then decelerate last 15%.
           // Committed pedestrians who see signal change rush (urgency ramp after 65%).
-          const accelPhase = pedestrian.progress < 0.15 ? pedestrian.progress / 0.15 : 1.0;
+          const accelPhase = pedestrian.progress < 0.15 ? Math.max(0.38, pedestrian.progress / 0.15) : 1.0;
           const decelPhase = pedestrian.progress > 0.85 ? Math.max(0.4, (1.0 - pedestrian.progress) / 0.15) : 1.0;
           const phaseMultiplier = accelPhase * decelPhase;
           const urgencyBoost = pedestrian.committed && pedestrian.progress > 0.65 ? 1.0 + (pedestrian.progress - 0.65) * 0.6 : 1.0;
