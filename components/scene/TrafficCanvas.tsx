@@ -469,6 +469,10 @@ function renderFrame(
   const scene = current.scene;
 
   ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, H);
+  ctx.clip();
 
   drawBackground(ctx);
   drawTrees(ctx);
@@ -517,6 +521,7 @@ function renderFrame(
   drawDebugPaths(ctx, scene);
   drawWeather(ctx, scene.weatherMode);
   drawVignette(ctx);
+  ctx.restore();
 
   // Swap state maps by reference
   prevVehicles.clear();
@@ -592,6 +597,8 @@ export function TrafficCanvas({ frameRef, caption, mode = "full" }: Props) {
       const dt  = now - lastTime;
       lastTime  = now;
 
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(transform.sx, 0, 0, transform.sy, transform.ox, transform.oy);
       renderFrame(ctx, frameRef.current, prevVehicles, prevPedestrians, vehicleHeadings, dt);
       rafId = requestAnimationFrame(loop);

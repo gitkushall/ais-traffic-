@@ -90,6 +90,7 @@ const ROAD_EDGE = "rgba(255,255,255,0.8)";
 const ROAD_DASH = "rgba(255,215,0,0.7)";
 const STOP = "rgba(255,255,255,0.88)";
 const LANE_MARK = "rgba(255,255,255,0.32)";
+const GUIDE_MARK = "rgba(255,255,255,0.22)";
 
 function zebraNorth(id: string, y: number): SceneCrosswalkSnapshot {
   return {
@@ -574,11 +575,19 @@ const LAYOUTS: Record<IntersectionType, IntersectionLayout> = {
     ],
     laneDividers: [
       { id: "center-vertical", x1: 450, y1: 0, x2: 450, y2: 720, stroke: ROAD_DASH, strokeWidth: 2, dashArray: "14 10" },
-      { id: "v-lane-1", x1: 426, y1: 0, x2: 426, y2: 720, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
-      { id: "v-lane-2", x1: 474, y1: 0, x2: 474, y2: 720, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "v-lane-1-north", x1: 426, y1: 0, x2: 426, y2: 246, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "v-lane-1-guide", x1: 426, y1: 316, x2: 426, y2: 404, stroke: GUIDE_MARK, strokeWidth: 1.2, dashArray: "8 22" },
+      { id: "v-lane-1-south", x1: 426, y1: 506, x2: 426, y2: 720, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "v-lane-2-north", x1: 474, y1: 0, x2: 474, y2: 246, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "v-lane-2-guide", x1: 474, y1: 316, x2: 474, y2: 404, stroke: GUIDE_MARK, strokeWidth: 1.2, dashArray: "8 22" },
+      { id: "v-lane-2-south", x1: 474, y1: 506, x2: 474, y2: 720, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
       { id: "center-horizontal", x1: 0, y1: 360, x2: 900, y2: 360, stroke: ROAD_DASH, strokeWidth: 2, dashArray: "14 10" },
-      { id: "h-lane-1", x1: 0, y1: 336, x2: 900, y2: 336, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
-      { id: "h-lane-2", x1: 0, y1: 384, x2: 900, y2: 384, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "h-lane-1-west", x1: 0, y1: 336, x2: 336, y2: 336, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "h-lane-1-guide", x1: 396, y1: 336, x2: 504, y2: 336, stroke: GUIDE_MARK, strokeWidth: 1.2, dashArray: "8 22" },
+      { id: "h-lane-1-east", x1: 604, y1: 336, x2: 900, y2: 336, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "h-lane-2-west", x1: 0, y1: 384, x2: 336, y2: 384, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
+      { id: "h-lane-2-guide", x1: 396, y1: 384, x2: 504, y2: 384, stroke: GUIDE_MARK, strokeWidth: 1.2, dashArray: "8 22" },
+      { id: "h-lane-2-east", x1: 604, y1: 384, x2: 900, y2: 384, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
     ],
     roadEdges: [
       { id: "edge-v-left", x1: 390, y1: 0, x2: 390, y2: 720, stroke: ROAD_EDGE, strokeWidth: 2 },
