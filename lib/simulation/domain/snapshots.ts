@@ -88,6 +88,20 @@ export type ScenePedestrianSnapshot = {
   progress: number;
   committed: boolean;
   state: string;
+  buildingWalkProgress: number;
+};
+
+export type SceneBuildingSnapshot = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  type: "hospital" | "school" | "mall" | "office" | "shop" | "cafe" | "library" | "park";
+  accentColor: string;
+  entranceX: number;
+  entranceY: number;
 };
 
 export type SceneRoadRectSnapshot = {
@@ -160,6 +174,7 @@ export type SceneSnapshot = {
   lanes: SceneLaneSnapshot[];
   signals: SceneSignalSnapshot[];
   pedestrians: ScenePedestrianSnapshot[];
+  buildings: SceneBuildingSnapshot[];
   debugPaths: SceneDebugPathSnapshot[];
   debugStops: SceneDebugStopSnapshot[];
 };

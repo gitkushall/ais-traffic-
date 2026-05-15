@@ -30,7 +30,7 @@ function smoothAngle(from: number, to: number, alpha: number) {
 
 function headingFromVector(dx: number, dy: number) {
   if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
-    return 90;
+    return null;
   }
   return (Math.atan2(dy, dx) * 180) / Math.PI;
 }
@@ -117,7 +117,7 @@ function drawLaneVehicles(lane: DisplayLane) {
     return (
       <g key={vehicle.id} transform={`translate(${vehicle.x} ${vehicle.y}) rotate(${vehicle.displayHeading})`}>
         {/* Drop shadow */}
-        <ellipse cx={hw * 0.04} cy={hh * 0.6} fill="rgba(0,0,0,0.15)" rx={hw * 0.82} ry={hh * 0.38} />
+        <ellipse cx="0" cy={hh * 0.18} fill="rgba(0,0,0,0.16)" rx={hw * 0.86} ry={hh * 0.40} />
         {/* Body */}
         <rect
           fill={vehicle.color}
@@ -313,7 +313,8 @@ function useInterpolatedScene(scene: SceneSnapshot) {
           }
           const nextX = existing.x + (pedestrian.x - existing.x) * 0.24;
           const nextY = existing.y + (pedestrian.y - existing.y) * 0.24;
-          const nextHeading = smoothAngle(existing.heading, headingFromVector(pedestrian.x - existing.x, pedestrian.y - existing.y), 0.18);
+          const rawH = headingFromVector(pedestrian.x - existing.x, pedestrian.y - existing.y);
+          const nextHeading = rawH !== null ? smoothAngle(existing.heading, rawH, 0.18) : existing.heading;
           if (Math.abs(nextX - pedestrian.x) > 0.2 || Math.abs(nextY - pedestrian.y) > 0.2) {
             moving = true;
           }
@@ -371,21 +372,132 @@ export function TrafficScene({ scene, mode = "full" }: TrafficSceneProps) {
           <defs>
             <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
               <stop offset="55%" stopColor="rgba(0,0,0,0)" />
-              <stop offset="100%" stopColor="rgba(6,10,16,0.26)" />
+              <stop offset="100%" stopColor="rgba(6,10,16,0.32)" />
             </radialGradient>
+            <radialGradient id="grass-light" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="rgba(60,130,20,0.18)" />
+              <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+            </radialGradient>
+            <filter id="tree-shadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur" />
+              <feOffset dx="2" dy="3" in="blur" result="shadow" />
+              <feFlood floodColor="rgba(0,0,0,0.4)" result="color" />
+              <feComposite in="color" in2="shadow" operator="in" result="shadow2" />
+              <feMerge><feMergeNode in="shadow2" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
           </defs>
+          {/* Sky/ground background */}
           <rect fill="#2d5016" height="720" width="900" x="0" y="0" />
-          <ellipse cx="184" cy="136" fill="rgba(12,25,8,0.28)" rx="30" ry="18" />
-          <ellipse cx="724" cy="136" fill="rgba(12,25,8,0.28)" rx="30" ry="18" />
-          <ellipse cx="184" cy="596" fill="rgba(12,25,8,0.28)" rx="30" ry="18" />
-          <ellipse cx="724" cy="596" fill="rgba(12,25,8,0.28)" rx="30" ry="18" />
-          <circle cx="180" cy="130" fill="#2d6a0a" r="28" />
-          <circle cx="720" cy="130" fill="#2d6a0a" r="28" />
-          <circle cx="180" cy="590" fill="#2d6a0a" r="28" />
-          <circle cx="720" cy="590" fill="#2d6a0a" r="28" />
+          {/* Grass texture variation */}
+          <rect fill="url(#grass-light)" height="720" width="900" x="0" y="0" />
+          {/* Tree shadows */}
+          <ellipse cx="184" cy="140" fill="rgba(8,18,4,0.32)" rx="32" ry="19" />
+          <ellipse cx="724" cy="140" fill="rgba(8,18,4,0.32)" rx="32" ry="19" />
+          <ellipse cx="184" cy="598" fill="rgba(8,18,4,0.32)" rx="32" ry="19" />
+          <ellipse cx="724" cy="598" fill="rgba(8,18,4,0.32)" rx="32" ry="19" />
+          {/* Tree canopies (layered circles for depth) */}
+          <circle cx="180" cy="130" fill="#1e5208" r="34" filter="url(#tree-shadow)" />
+          <circle cx="180" cy="130" fill="#2d7a0a" r="28" />
+          <circle cx="180" cy="126" fill="#38920e" r="20" />
+          <circle cx="720" cy="130" fill="#1e5208" r="34" filter="url(#tree-shadow)" />
+          <circle cx="720" cy="130" fill="#2d7a0a" r="28" />
+          <circle cx="720" cy="126" fill="#38920e" r="20" />
+          <circle cx="180" cy="590" fill="#1e5208" r="34" filter="url(#tree-shadow)" />
+          <circle cx="180" cy="590" fill="#2d7a0a" r="28" />
+          <circle cx="180" cy="586" fill="#38920e" r="20" />
+          <circle cx="720" cy="590" fill="#1e5208" r="34" filter="url(#tree-shadow)" />
+          <circle cx="720" cy="590" fill="#2d7a0a" r="28" />
+          <circle cx="720" cy="586" fill="#38920e" r="20" />
+          {/* Additional shrubs for depth */}
+          <circle cx="100" cy="360" fill="#246308" r="18" opacity="0.7" />
+          <circle cx="100" cy="360" fill="#2d7a0a" r="14" opacity="0.8" />
+          <circle cx="800" cy="360" fill="#246308" r="18" opacity="0.7" />
+          <circle cx="800" cy="360" fill="#2d7a0a" r="14" opacity="0.8" />
+          <circle cx="450" cy="80" fill="#246308" r="14" opacity="0.6" />
+          <circle cx="450" cy="640" fill="#246308" r="14" opacity="0.6" />
           {displayScene.roads.map((road) => (
             <rect key={road.id} fill={road.fill} height={road.height} width={road.width} x={road.x} y={road.y} />
           ))}
+
+          {/* ── 2-Way: road grain + shoulder markings ── */}
+          {displayScene.intersectionType === "2way" && (
+            <g>
+              <rect x="370" y="0" width="1" height="720" fill="rgba(255,255,255,0.04)" />
+              <rect x="529" y="0" width="1" height="720" fill="rgba(255,255,255,0.04)" />
+              {/* Crosswalk bump indicator lines */}
+              <line x1="370" y1="270" x2="530" y2="270" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+              <line x1="370" y1="450" x2="530" y2="450" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            </g>
+          )}
+
+          {/* ── T-Junction: curb fillets + dead-end markings ── */}
+          {displayScene.intersectionType === "3way" && (
+            <g>
+              {/* SW curb fillet — covers sharp corner where N-road left edge meets H-road top */}
+              <path d="M 400 310 L 400 326 A 16 16 0 0 1 384 310 Z" fill="#2d5016" />
+              {/* SE curb fillet */}
+              <path d="M 500 310 L 484 310 A 16 16 0 0 1 500 326 Z" fill="#2d5016" />
+              {/* Curb edge arcs (white) */}
+              <path d="M 400 326 A 16 16 0 0 0 384 310" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" />
+              <path d="M 484 310 A 16 16 0 0 0 500 326" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" />
+              {/* T-bar "road ends" striping at the bottom of the north arm */}
+              <rect x="400" y="398" width="100" height="10" fill="rgba(240,180,0,0.22)" rx="2" />
+              <line x1="420" y1="402" x2="480" y2="402" stroke="rgba(255,200,0,0.55)" strokeWidth="2" strokeDasharray="8 6" />
+            </g>
+          )}
+
+          {/* ── 4-Way: corner curb fillets ── */}
+          {displayScene.intersectionType === "4way" && (
+            <g>
+              {/* NW corner */}
+              <path d="M 390 300 L 390 316 A 16 16 0 0 1 374 300 Z" fill="#2d5016" />
+              <path d="M 390 316 A 16 16 0 0 0 374 300" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" />
+              {/* NE corner */}
+              <path d="M 510 300 L 494 300 A 16 16 0 0 1 510 316 Z" fill="#2d5016" />
+              <path d="M 494 300 A 16 16 0 0 0 510 316" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" />
+              {/* SW corner */}
+              <path d="M 390 420 L 374 420 A 16 16 0 0 1 390 404 Z" fill="#2d5016" />
+              <path d="M 374 420 A 16 16 0 0 0 390 404" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" />
+              {/* SE corner */}
+              <path d="M 510 420 L 510 404 A 16 16 0 0 1 526 420 Z" fill="#2d5016" />
+              <path d="M 510 404 A 16 16 0 0 0 526 420" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" />
+            </g>
+          )}
+
+          {/* ── Lamp posts at junction corners ── */}
+          {displayScene.intersectionType === "4way" && (
+            <g opacity="0.85">
+              {[{ x: 378, y: 290 }, { x: 522, y: 290 }, { x: 378, y: 430 }, { x: 522, y: 430 }].map((p, i) => (
+                <g key={`lamp-${i}`}>
+                  <rect x={p.x - 1} y={p.y} width="2" height="18" fill="#8a8a90" rx="1" />
+                  <circle cx={p.x} cy={p.y} r="4" fill="#d4b850" opacity="0.9" />
+                  <circle cx={p.x} cy={p.y} r="7" fill="rgba(212,184,80,0.15)" />
+                </g>
+              ))}
+            </g>
+          )}
+          {displayScene.intersectionType === "3way" && (
+            <g opacity="0.85">
+              {[{ x: 390, y: 300 }, { x: 510, y: 300 }, { x: 378, y: 420 }, { x: 522, y: 420 }].map((p, i) => (
+                <g key={`lamp3-${i}`}>
+                  <rect x={p.x - 1} y={p.y} width="2" height="18" fill="#8a8a90" rx="1" />
+                  <circle cx={p.x} cy={p.y} r="4" fill="#d4b850" opacity="0.9" />
+                  <circle cx={p.x} cy={p.y} r="7" fill="rgba(212,184,80,0.15)" />
+                </g>
+              ))}
+            </g>
+          )}
+          {displayScene.intersectionType === "2way" && (
+            <g opacity="0.85">
+              {[{ x: 360, y: 280 }, { x: 540, y: 280 }, { x: 360, y: 450 }, { x: 540, y: 450 }].map((p, i) => (
+                <g key={`lamp2-${i}`}>
+                  <rect x={p.x - 1} y={p.y} width="2" height="18" fill="#8a8a90" rx="1" />
+                  <circle cx={p.x} cy={p.y} r="4" fill="#d4b850" opacity="0.9" />
+                  <circle cx={p.x} cy={p.y} r="7" fill="rgba(212,184,80,0.15)" />
+                </g>
+              ))}
+            </g>
+          )}
           {roadTexture.map((texture) => (
             <line
               key={texture.id}

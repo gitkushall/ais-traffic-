@@ -1,5 +1,6 @@
 import { IntersectionType, LaneId, MovementLane, TurnIntent } from "@/lib/simulation/domain/enums";
 import {
+  SceneBuildingSnapshot,
   SceneCrosswalkSnapshot,
   SceneLineSnapshot,
   SceneRoadRectSnapshot,
@@ -57,6 +58,7 @@ export type IntersectionLayout = {
   roadEdges: SceneLineSnapshot[];
   stopLines: SceneLineSnapshot[];
   crosswalks: SceneCrosswalkSnapshot[];
+  buildings: SceneBuildingSnapshot[];
 };
 
 function createMovementConflictMap(phases: PhaseLayout[]) {
@@ -83,11 +85,12 @@ function createMovementConflictMap(phases: PhaseLayout[]) {
   return conflicts;
 }
 
-const BASE_COLORS = ["#f5f5f5", "#c0c0c0", "#555555", "#c0392b", "#2471a3", "#1e8449"];
+const BASE_COLORS = ["#d9cbbf", "#8fb8d0", "#98c874", "#e8a058", "#c890d4", "#70c8d8"];
 const ROAD = "#3a3a3a";
 const SIDEWALK = "#4a4a4a";
 const ROAD_EDGE = "rgba(255,255,255,0.8)";
 const ROAD_DASH = "rgba(255,215,0,0.7)";
+const CENTER_YELLOW = "rgba(255,205,0,0.92)";
 const STOP = "rgba(255,255,255,0.88)";
 const LANE_MARK = "rgba(255,255,255,0.32)";
 const GUIDE_MARK = "rgba(255,255,255,0.22)";
@@ -273,17 +276,94 @@ const threeWestThrough = westMovement("through", "straight", 402, "east", 700, 4
 const threeWestLeft = westMovement("left", "left", 372, "north", 368, 210);
 
 const northLeft = northMovement("left", "left", 438, "east", 590, 278);
-const northThrough = northMovement("through", "straight", 402, "south", 402, 520);
-const northRight = northMovement("right", "right", 402, "west", 312, 278);
+const northThrough = northMovement("through", "straight", 410, "south", 410, 520);
+const northRight = northMovement("right", "right", 396, "west", 312, 278);
 const southLeft = southMovement("left", "left", 462, "west", 310, 442);
-const southThrough = southMovement("through", "straight", 498, "north", 498, 200);
-const southRight = southMovement("right", "right", 498, "east", 590, 442);
+const southThrough = southMovement("through", "straight", 490, "north", 490, 200);
+const southRight = southMovement("right", "right", 504, "east", 590, 442);
 const eastLeft = eastMovement("left", "left", 348, "south", 532, 520);
-const eastThrough = eastMovement("through", "straight", 318, "west", 200, 318);
-const eastRight = eastMovement("right", "right", 318, "north", 532, 198);
+const eastThrough = eastMovement("through", "straight", 324, "west", 200, 324);
+const eastRight = eastMovement("right", "right", 308, "north", 532, 198);
 const westLeft = westMovement("left", "left", 372, "north", 368, 198);
-const westThrough = westMovement("through", "straight", 402, "east", 700, 402);
-const westRight = westMovement("right", "right", 402, "south", 368, 520);
+const westThrough = westMovement("through", "straight", 390, "east", 700, 390);
+const westRight = westMovement("right", "right", 408, "south", 368, 520);
+
+// ─── Building definitions ─────────────────────────────────────────────────────
+// 4-way: canvas 900×720, road-vertical x=390–510, road-horizontal y=300–420
+// Sidewalk strips: x=360–390 (W), x=510–540 (E), y=270–300 (N), y=420–450 (S)
+// Building zones: NW (0–355, 0–265), NE (545–900, 0–265), SW (0–355, 455–720), SE (545–900, 455–720)
+const BUILDINGS_4WAY: SceneBuildingSnapshot[] = [
+  // NW — Hospital
+  { id: "hospital", x: 22, y: 18, w: 215, h: 165,
+    label: "HOSPITAL", type: "hospital", accentColor: "#c8302a",
+    entranceX: 237, entranceY: 183 },
+  // NE — School
+  { id: "school", x: 548, y: 18, w: 230, h: 162,
+    label: "SCHOOL", type: "school", accentColor: "#d49018",
+    entranceX: 548, entranceY: 180 },
+  // SW — Mall
+  { id: "mall", x: 12, y: 452, w: 238, h: 172,
+    label: "CITY MALL", type: "mall", accentColor: "#5060c8",
+    entranceX: 250, entranceY: 452 },
+  // SE — Offices
+  { id: "office", x: 546, y: 452, w: 230, h: 168,
+    label: "OFFICES", type: "office", accentColor: "#3a5a8a",
+    entranceX: 546, entranceY: 452 },
+];
+
+// 3-way: north arm + east/west horizontal road
+const BUILDINGS_3WAY: SceneBuildingSnapshot[] = [
+  { id: "hospital", x: 22, y: 18, w: 205, h: 158,
+    label: "HOSPITAL", type: "hospital", accentColor: "#c8302a",
+    entranceX: 227, entranceY: 176 },
+  { id: "school", x: 548, y: 18, w: 225, h: 155,
+    label: "SCHOOL", type: "school", accentColor: "#d49018",
+    entranceX: 548, entranceY: 173 },
+  { id: "mall", x: 12, y: 452, w: 228, h: 168,
+    label: "CITY MALL", type: "mall", accentColor: "#5060c8",
+    entranceX: 240, entranceY: 452 },
+  { id: "office", x: 548, y: 452, w: 222, h: 162,
+    label: "OFFICES", type: "office", accentColor: "#3a5a8a",
+    entranceX: 548, entranceY: 452 },
+];
+
+// 2-way: only vertical road
+const BUILDINGS_2WAY: SceneBuildingSnapshot[] = [
+  { id: "hospital", x: 22, y: 40, w: 195, h: 155,
+    label: "HOSPITAL", type: "hospital", accentColor: "#c8302a",
+    entranceX: 217, entranceY: 195 },
+  { id: "school", x: 538, y: 40, w: 215, h: 150,
+    label: "SCHOOL", type: "school", accentColor: "#d49018",
+    entranceX: 538, entranceY: 190 },
+  { id: "mall", x: 12, y: 490, w: 218, h: 160,
+    label: "CITY MALL", type: "mall", accentColor: "#5060c8",
+    entranceX: 230, entranceY: 490 },
+  { id: "office", x: 540, y: 490, w: 215, h: 155,
+    label: "OFFICES", type: "office", accentColor: "#3a5a8a",
+    entranceX: 540, entranceY: 490 },
+];
+
+// Building entrance points keyed by (intersectionType, crossingId, side)
+// Used by the simulation engine to assign pedestrian start/dest positions.
+// side: "a" = start side (leftEdge/topEdge), "b" = end side (rightEdge/bottomEdge)
+export type PedBuildingEntry = { x: number; y: number };
+export const PED_BUILDING_ENTRIES: Record<string, Record<string, { a: PedBuildingEntry; b: PedBuildingEntry }>> = {
+  "4way": {
+    "cross-north": { a: { x: 338, y: 215 }, b: { x: 562, y: 215 } },
+    "cross-south": { a: { x: 338, y: 494 }, b: { x: 562, y: 494 } },
+    "cross-east":  { a: { x: 635, y: 255 }, b: { x: 635, y: 455 } },
+    "cross-west":  { a: { x: 265, y: 255 }, b: { x: 265, y: 455 } },
+  },
+  "3way": {
+    "cross-north": { a: { x: 338, y: 215 }, b: { x: 560, y: 215 } },
+    "cross-east":  { a: { x: 630, y: 255 }, b: { x: 630, y: 450 } },
+    "cross-west":  { a: { x: 262, y: 255 }, b: { x: 262, y: 450 } },
+  },
+  "2way": {
+    "cross-north": { a: { x: 338, y: 210 }, b: { x: 558, y: 210 } },
+    "cross-south": { a: { x: 338, y: 490 }, b: { x: 558, y: 490 } },
+  },
+};
 
 const LAYOUTS: Record<IntersectionType, IntersectionLayout> = {
   "2way": {
@@ -339,7 +419,8 @@ const LAYOUTS: Record<IntersectionType, IntersectionLayout> = {
       { id: "road-vertical", x: 370, y: 0, width: 160, height: 720, fill: ROAD },
     ],
     laneDividers: [
-      { id: "center-vertical", x1: 450, y1: 0, x2: 450, y2: 720, stroke: ROAD_DASH, strokeWidth: 2, dashArray: "14 10" },
+      { id: "center-vertical-l", x1: 447, y1: 0, x2: 447, y2: 720, stroke: CENTER_YELLOW, strokeWidth: 2 },
+      { id: "center-vertical-r", x1: 453, y1: 0, x2: 453, y2: 720, stroke: CENTER_YELLOW, strokeWidth: 2 },
       { id: "lane-southbound-split", x1: 410, y1: 0, x2: 410, y2: 720, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
       { id: "lane-northbound-split", x1: 490, y1: 0, x2: 490, y2: 720, stroke: LANE_MARK, strokeWidth: 1.5, dashArray: "12 12" },
     ],
@@ -348,10 +429,11 @@ const LAYOUTS: Record<IntersectionType, IntersectionLayout> = {
       { id: "edge-right", x1: 530, y1: 0, x2: 530, y2: 720, stroke: ROAD_EDGE, strokeWidth: 2 },
     ],
     stopLines: [
-      { id: "stop-north", x1: 370, y1: 278, x2: 530, y2: 278, stroke: STOP, strokeWidth: 4 },
-      { id: "stop-south", x1: 370, y1: 442, x2: 530, y2: 442, stroke: STOP, strokeWidth: 4 },
+      { id: "stop-north", x1: 370, y1: 278, x2: 447, y2: 278, stroke: STOP, strokeWidth: 4 },
+      { id: "stop-south", x1: 453, y1: 442, x2: 530, y2: 442, stroke: STOP, strokeWidth: 4 },
     ],
     crosswalks: [zebraNorth("cross-north", 256), zebraSouth("cross-south", 464)],
+    buildings: BUILDINGS_2WAY,
   },
   "3way": {
     type: "3way",
@@ -435,13 +517,20 @@ const LAYOUTS: Record<IntersectionType, IntersectionLayout> = {
       { id: "road-horizontal", x: 0, y: 310, width: 900, height: 100, fill: ROAD },
     ],
     laneDividers: [
-      { id: "center-vertical", x1: 450, y1: 0, x2: 450, y2: 360, stroke: ROAD_DASH, strokeWidth: 2, dashArray: "14 10" },
-      { id: "center-horizontal", x1: 0, y1: 360, x2: 900, y2: 360, stroke: ROAD_DASH, strokeWidth: 2, dashArray: "14 10" },
+      { id: "center-vertical-l", x1: 447, y1: 0, x2: 447, y2: 310, stroke: CENTER_YELLOW, strokeWidth: 2 },
+      { id: "center-vertical-r", x1: 453, y1: 0, x2: 453, y2: 310, stroke: CENTER_YELLOW, strokeWidth: 2 },
+      { id: "center-horizontal-w", x1: 0, y1: 360, x2: 400, y2: 360, stroke: ROAD_DASH, strokeWidth: 2, dashArray: "14 10" },
+      { id: "center-horizontal-e", x1: 500, y1: 360, x2: 900, y2: 360, stroke: ROAD_DASH, strokeWidth: 2, dashArray: "14 10" },
+      { id: "lane-v-left", x1: 420, y1: 0, x2: 420, y2: 278, stroke: LANE_MARK, strokeWidth: 1.4, dashArray: "12 12" },
+      { id: "lane-v-right", x1: 480, y1: 0, x2: 480, y2: 278, stroke: LANE_MARK, strokeWidth: 1.4, dashArray: "12 12" },
+      { id: "lane-h-west", x1: 0, y1: 336, x2: 368, y2: 336, stroke: LANE_MARK, strokeWidth: 1.4, dashArray: "12 12" },
+      { id: "lane-h-east", x1: 532, y1: 336, x2: 900, y2: 336, stroke: LANE_MARK, strokeWidth: 1.4, dashArray: "12 12" },
     ],
     roadEdges: [
-      { id: "edge-v-left", x1: 400, y1: 0, x2: 400, y2: 360, stroke: ROAD_EDGE, strokeWidth: 2 },
-      { id: "edge-v-right", x1: 500, y1: 0, x2: 500, y2: 360, stroke: ROAD_EDGE, strokeWidth: 2 },
-      { id: "edge-h-top", x1: 0, y1: 310, x2: 900, y2: 310, stroke: ROAD_EDGE, strokeWidth: 2 },
+      { id: "edge-v-left", x1: 400, y1: 0, x2: 400, y2: 310, stroke: ROAD_EDGE, strokeWidth: 2 },
+      { id: "edge-v-right", x1: 500, y1: 0, x2: 500, y2: 310, stroke: ROAD_EDGE, strokeWidth: 2 },
+      { id: "edge-h-top-w", x1: 0, y1: 310, x2: 400, y2: 310, stroke: ROAD_EDGE, strokeWidth: 2 },
+      { id: "edge-h-top-e", x1: 500, y1: 310, x2: 900, y2: 310, stroke: ROAD_EDGE, strokeWidth: 2 },
       { id: "edge-h-bottom", x1: 0, y1: 410, x2: 900, y2: 410, stroke: ROAD_EDGE, strokeWidth: 2 },
     ],
     stopLines: [
@@ -450,6 +539,7 @@ const LAYOUTS: Record<IntersectionType, IntersectionLayout> = {
       { id: "stop-west", x1: 368, y1: 310, x2: 368, y2: 410, stroke: STOP, strokeWidth: 4 },
     ],
     crosswalks: [zebraNorth("cross-north", 256), zebraEast("cross-east", 554), zebraWest("cross-west", 346)],
+    buildings: BUILDINGS_3WAY,
   },
   "4way": {
     type: "4way",
@@ -602,6 +692,7 @@ const LAYOUTS: Record<IntersectionType, IntersectionLayout> = {
       { id: "stop-west", x1: 368, y1: 300, x2: 368, y2: 420, stroke: STOP, strokeWidth: 4 },
     ],
     crosswalks: [zebraNorth("cross-north", 256), zebraSouth("cross-south", 464), zebraEast("cross-east", 554), zebraWest("cross-west", 346)],
+    buildings: BUILDINGS_4WAY,
   },
 };
 

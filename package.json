@@ -11,7 +11,8 @@
   "dependencies": {
     "next": "^15.5.16",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "three": "^0.184.0"
   },
   "overrides": {
     "postcss": "8.5.10"
@@ -20,6 +21,7 @@
     "@types/node": "^22.19.17",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.184.1",
     "typescript": "^5.9.3"
   }
 }

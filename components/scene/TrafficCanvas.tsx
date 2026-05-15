@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, RefObject, useCallback } from "react";
 
 import type { FrameBuffer } from "@/lib/hooks/use-simulation-worker";
 import type {
+  SceneBuildingSnapshot,
   SceneCrosswalkSnapshot,
   SceneLineSnapshot,
   ScenePedestrianSnapshot,
@@ -26,20 +27,20 @@ type ArrowDef = { x: number; y: number; heading: number; intent: "left" | "strai
 const ARROWS_4WAY: ArrowDef[] = [
   // North approach (traveling south ↓, heading=90)
   { x: 438, y: 210, heading: 90,  intent: "left"     },
-  { x: 402, y: 210, heading: 90,  intent: "straight"  },
-  { x: 402, y: 230, heading: 90,  intent: "right"     },
+  { x: 410, y: 210, heading: 90,  intent: "straight"  },
+  { x: 396, y: 230, heading: 90,  intent: "right"     },
   // South approach (traveling north ↑, heading=270)
   { x: 462, y: 508, heading: 270, intent: "left"      },
-  { x: 498, y: 508, heading: 270, intent: "straight"  },
-  { x: 498, y: 490, heading: 270, intent: "right"     },
+  { x: 490, y: 508, heading: 270, intent: "straight"  },
+  { x: 504, y: 490, heading: 270, intent: "right"     },
   // East approach (traveling west ←, heading=180)
   { x: 616, y: 348, heading: 180, intent: "left"      },
-  { x: 616, y: 318, heading: 180, intent: "straight"  },
-  { x: 598, y: 318, heading: 180, intent: "right"     },
+  { x: 616, y: 324, heading: 180, intent: "straight"  },
+  { x: 598, y: 308, heading: 180, intent: "right"     },
   // West approach (traveling east →, heading=0)
   { x: 284, y: 372, heading: 0,   intent: "left"      },
-  { x: 284, y: 402, heading: 0,   intent: "straight"  },
-  { x: 302, y: 402, heading: 0,   intent: "right"     },
+  { x: 284, y: 390, heading: 0,   intent: "straight"  },
+  { x: 302, y: 408, heading: 0,   intent: "right"     },
 ];
 
 const ARROWS_2WAY: ArrowDef[] = [
@@ -117,6 +118,246 @@ function drawTrees(ctx: CanvasRenderingContext2D) {
     // highlight
     ctx.fillStyle = "rgba(100,200,40,0.22)";
     ctx.beginPath(); ctx.arc(t.x - t.r*0.28, t.y - t.r*0.28, t.r*0.38, 0, TWO_PI); ctx.fill();
+  }
+}
+
+// Footpaths: concrete strips from each building entrance to the road edge (4-way only)
+// Each path is drawn as a wide stroked polyline so pedestrians walk on pavement not grass
+type FootPath = { pts: [number, number][] };
+const FOOTPATHS_4WAY: FootPath[] = [
+  // Hospital (NW) → north road corner
+  { pts: [[237, 183], [363, 218], [363, 270]] },
+  // Hospital (NW) → west road (horizontal entry)
+  { pts: [[228, 175], [260, 270]] },
+  // School (NE) → north road corner
+  { pts: [[548, 180], [537, 218], [537, 270]] },
+  // School (NE) → east road (horizontal entry)
+  { pts: [[640, 175], [638, 270]] },
+  // Mall (SW) → south road corner
+  { pts: [[250, 452], [363, 455], [363, 450]] },
+  // Mall (SW) → west road
+  { pts: [[225, 455], [260, 450]] },
+  // Offices (SE) → south road corner
+  { pts: [[546, 452], [537, 455], [537, 450]] },
+  // Offices (SE) → east road
+  { pts: [[638, 455], [638, 450]] },
+];
+const FOOTPATHS_3WAY: FootPath[] = [
+  { pts: [[227, 176], [363, 215], [363, 268]] },
+  { pts: [[225, 165], [258, 268]] },
+  { pts: [[548, 173], [537, 215], [537, 268]] },
+  { pts: [[632, 173], [630, 268]] },
+  { pts: [[240, 452], [363, 448]] },
+  { pts: [[548, 452], [537, 448]] },
+];
+const FOOTPATHS_2WAY: FootPath[] = [
+  { pts: [[217, 195], [363, 218], [363, 270]] },
+  { pts: [[538, 190], [537, 270]] },
+  { pts: [[230, 490], [363, 488]] },
+  { pts: [[540, 490], [537, 488]] },
+];
+
+function drawFootpaths(ctx: CanvasRenderingContext2D, intersectionType: string) {
+  const paths = intersectionType === "4way" ? FOOTPATHS_4WAY
+    : intersectionType === "3way" ? FOOTPATHS_3WAY
+    : FOOTPATHS_2WAY;
+
+  ctx.lineCap  = "round";
+  ctx.lineJoin = "round";
+  // Outer border (slightly darker)
+  ctx.strokeStyle = "#9a9282";
+  ctx.lineWidth = 16;
+  for (const fp of paths) {
+    ctx.beginPath();
+    ctx.moveTo(fp.pts[0][0], fp.pts[0][1]);
+    for (let i = 1; i < fp.pts.length; i++) ctx.lineTo(fp.pts[i][0], fp.pts[i][1]);
+    ctx.stroke();
+  }
+  // Inner concrete fill
+  ctx.strokeStyle = "#c8bfaa";
+  ctx.lineWidth = 11;
+  for (const fp of paths) {
+    ctx.beginPath();
+    ctx.moveTo(fp.pts[0][0], fp.pts[0][1]);
+    for (let i = 1; i < fp.pts.length; i++) ctx.lineTo(fp.pts[i][0], fp.pts[i][1]);
+    ctx.stroke();
+  }
+  ctx.lineCap  = "butt";
+  ctx.lineJoin = "miter";
+}
+
+function drawBuildings(ctx: CanvasRenderingContext2D, buildings: SceneBuildingSnapshot[]) {
+  for (const b of buildings) {
+    // ── shadow ───────────────────────────────────────────────────────────────
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.beginPath();
+    ctx.roundRect(b.x + 6, b.y + 8, b.w, b.h, 5);
+    ctx.fill();
+
+    // ── base wall ────────────────────────────────────────────────────────────
+    const wallColor  = b.type === "hospital" ? "#f2ede4"
+      : b.type === "school"   ? "#fdf6d8"
+      : b.type === "mall"     ? "#dce8f2"
+      : "#e2eaf4";
+    ctx.fillStyle   = wallColor;
+    ctx.strokeStyle = "rgba(0,0,0,0.22)";
+    ctx.lineWidth   = 1.2;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 5); ctx.fill(); ctx.stroke();
+
+    // ── accent top band (parapet / signage band) ──────────────────────────
+    const bandH = 20;
+    ctx.fillStyle = b.accentColor;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, bandH, [5, 5, 0, 0]); ctx.fill();
+    // band shine
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath(); ctx.roundRect(b.x + 4, b.y + 3, b.w - 8, 5, 2); ctx.fill();
+
+    // ── floor separation lines ────────────────────────────────────────────
+    const floors = b.type === "office" ? 4 : b.type === "mall" ? 2 : 3;
+    const floorH  = (b.h - bandH) / floors;
+    ctx.strokeStyle = "rgba(0,0,0,0.08)";
+    ctx.lineWidth   = 1;
+    for (let f = 1; f < floors; f++) {
+      const fy = b.y + bandH + floorH * f;
+      ctx.beginPath(); ctx.moveTo(b.x + 2, fy); ctx.lineTo(b.x + b.w - 2, fy); ctx.stroke();
+    }
+
+    // ── windows ───────────────────────────────────────────────────────────
+    const winW    = b.type === "office" ? 14 : b.type === "mall" ? 18 : 11;
+    const winH    = b.type === "office" ? 9  : b.type === "mall" ? 22 : 9;
+    const colGap  = b.type === "office" ? 7  : 9;
+    const cols    = Math.floor((b.w - 20) / (winW + colGap));
+    const colStep = (b.w - 20) / cols;
+    for (let f = 0; f < floors; f++) {
+      for (let c = 0; c < cols; c++) {
+        const wx = b.x + 10 + colStep * c + (colStep - winW) / 2;
+        const wy = b.y + bandH + floorH * f + (floorH - winH) / 2 + 2;
+        if (b.type === "office") {
+          // curtain-wall look: glass panels flush
+          ctx.fillStyle = "rgba(160,210,240,0.82)";
+          ctx.fillRect(wx, wy, winW, winH);
+          ctx.strokeStyle = "rgba(80,120,160,0.55)";
+          ctx.lineWidth   = 0.7;
+          ctx.strokeRect(wx, wy, winW, winH);
+          // horizontal mullion
+          ctx.beginPath(); ctx.moveTo(wx, wy + winH / 2); ctx.lineTo(wx + winW, wy + winH / 2); ctx.stroke();
+        } else if (b.type === "mall") {
+          // large storefront glass
+          ctx.fillStyle = "rgba(180,220,250,0.78)";
+          ctx.fillRect(wx, wy, winW, winH);
+          ctx.strokeStyle = "rgba(60,100,150,0.4)";
+          ctx.lineWidth   = 0.8;
+          ctx.strokeRect(wx, wy, winW, winH);
+        } else {
+          // standard windows with sill
+          ctx.fillStyle = "rgba(180,222,248,0.80)";
+          ctx.beginPath(); ctx.roundRect(wx, wy, winW, winH, 1); ctx.fill();
+          ctx.strokeStyle = "rgba(100,140,180,0.45)";
+          ctx.lineWidth   = 0.7;
+          ctx.stroke();
+          // sill
+          ctx.fillStyle = "rgba(255,255,255,0.35)";
+          ctx.fillRect(wx - 1, wy + winH, winW + 2, 2);
+        }
+      }
+    }
+
+    // ── type-specific features ────────────────────────────────────────────
+    if (b.type === "hospital") {
+      // Large red cross on facade
+      const cx = b.x + b.w * 0.75, cy = b.y + b.h * 0.62;
+      ctx.fillStyle = "#cc2a22";
+      ctx.fillRect(cx - 3, cy - 11, 6, 22);
+      ctx.fillRect(cx - 11, cy - 3, 22, 6);
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.fillRect(cx - 2, cy - 10, 4, 20);
+      ctx.fillRect(cx - 10, cy - 2, 20, 4);
+      // "EMERGENCY" bay strip at bottom
+      ctx.fillStyle = "#cc2a22";
+      ctx.fillRect(b.x, b.y + b.h - 18, b.w, 18);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 7px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("EMERGENCY", b.x + b.w / 2, b.y + b.h - 5);
+      ctx.textAlign = "left";
+    }
+
+    if (b.type === "school") {
+      // Flagpole
+      ctx.strokeStyle = "#888";
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath(); ctx.moveTo(b.x + 12, b.y + bandH); ctx.lineTo(b.x + 12, b.y + bandH + 35); ctx.stroke();
+      ctx.fillStyle = "#e83030";
+      ctx.beginPath(); ctx.moveTo(b.x + 12, b.y + bandH); ctx.lineTo(b.x + 28, b.y + bandH + 7); ctx.lineTo(b.x + 12, b.y + bandH + 14); ctx.fill();
+      // Clock on facade
+      ctx.strokeStyle = "#888"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(b.x + b.w / 2, b.y + b.h * 0.62, 10, 0, TWO_PI); ctx.stroke();
+      ctx.fillStyle = "#fffde0"; ctx.fill();
+      ctx.strokeStyle = "#555"; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(b.x + b.w / 2, b.y + b.h * 0.62); ctx.lineTo(b.x + b.w / 2, b.y + b.h * 0.62 - 7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(b.x + b.w / 2, b.y + b.h * 0.62); ctx.lineTo(b.x + b.w / 2 + 5, b.y + b.h * 0.62 + 2); ctx.stroke();
+    }
+
+    if (b.type === "mall") {
+      // Entrance canopy strip
+      ctx.fillStyle = darken(b.accentColor, 0.15);
+      ctx.fillRect(b.x + b.w * 0.2, b.y + b.h - 22, b.w * 0.6, 8);
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(b.x + b.w * 0.2, b.y + b.h - 22, b.w * 0.6, 4);
+      // Signage panel on band
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.beginPath(); ctx.roundRect(b.x + 10, b.y + 4, b.w - 20, 12, 2); ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 8px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(b.label, b.x + b.w / 2, b.y + 13);
+      ctx.textAlign = "left";
+    }
+
+    if (b.type === "office") {
+      // Rooftop HVAC boxes
+      ctx.fillStyle = darken(wallColor, 0.12);
+      ctx.fillRect(b.x + b.w * 0.2, b.y + 2, 22, 10);
+      ctx.fillRect(b.x + b.w * 0.6, b.y + 2, 16, 8);
+      // Small signage panel
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.beginPath(); ctx.roundRect(b.x + 8, b.y + 4, b.w - 16, 12, 2); ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 7px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(b.label, b.x + b.w / 2, b.y + 14);
+      ctx.textAlign = "left";
+    }
+
+    // ── entrance door ────────────────────────────────────────────────────
+    // Determine which edge the entrance is on
+    const onBottom = b.entranceY >= b.y + b.h - 4;
+    const onLeft   = b.entranceX <= b.x + 4;
+    const onRight  = b.entranceX >= b.x + b.w - 4;
+    const dW = 16, dH = 20;
+    let dX = b.entranceX - dW / 2;
+    let dY = onBottom ? b.y + b.h - dH
+           : onLeft   ? b.y + b.h - dH
+           : onRight  ? b.y + b.h - dH
+           : b.y + b.h - dH;
+    // For side entrances, position door more accurately
+    if (!onBottom && !onLeft && !onRight) {
+      // entrance is on a corner edge; guess nearest edge
+      if (b.entranceY <= b.y + 4) dY = b.y;
+      else dY = b.y + b.h - dH;
+    }
+    // Double doors
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(dX, dY, dW, dH);
+    ctx.fillStyle = "rgba(160,210,245,0.65)";
+    ctx.fillRect(dX + 1, dY + 1, dW / 2 - 1, dH - 2);
+    ctx.fillRect(dX + dW / 2 + 1, dY + 1, dW / 2 - 2, dH - 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth   = 0.6;
+    ctx.strokeRect(dX, dY, dW, dH);
+    // Entrance step / stoop
+    ctx.fillStyle = "#b8b0a0";
+    ctx.fillRect(dX - 3, dY + dH, dW + 6, 5);
   }
 }
 
@@ -276,9 +517,16 @@ function drawPedestrian(
   heading: number,         // degrees, direction of movement
   walkPhase: number,       // 0–1 leg-swing cycle
 ) {
-  const active = ped.state === "crossing" || ped.state === "finishing" || ped.state === "starting";
+  const active = ped.state === "crossing" || ped.state === "finishing" || ped.state === "starting"
+    || ped.state === "exiting_building" || ped.state === "entering_building";
+
+  // Fade in when exiting building, fade out when entering
+  let alpha = 1;
+  if (ped.state === "exiting_building") alpha = 0.3 + ped.buildingWalkProgress * 0.7;
+  else if (ped.state === "entering_building") alpha = 1 - ped.buildingWalkProgress * 0.85;
 
   ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.translate(x, y);
   ctx.rotate((heading + 90) * Math.PI / 180); // face direction of travel
 
@@ -450,7 +698,7 @@ function drawDebugPaths(ctx: CanvasRenderingContext2D, scene: SceneSnapshot) {
 }
 
 // ─── main render ─────────────────────────────────────────────────────────────
-type VehicleState = { x: number; y: number };
+type VehicleState = { x: number; y: number; heading: number };
 type PedState     = { x: number; y: number; heading: number; walkPhase: number };
 
 function renderFrame(
@@ -458,7 +706,6 @@ function renderFrame(
   buf: FrameBuffer,
   prevVehicles:    Map<string, VehicleState>,
   prevPedestrians: Map<string, PedState>,
-  vehicleHeadings: Map<string, number>,
   dt: number,              // real elapsed ms since last rAF call
 ) {
   const { current } = buf;
@@ -476,6 +723,8 @@ function renderFrame(
 
   drawBackground(ctx);
   drawTrees(ctx);
+  drawFootpaths(ctx, scene.intersectionType);
+  drawBuildings(ctx, scene.buildings ?? []);
   drawRoads(ctx, scene.roads);
   drawLaneArrows(ctx, scene.intersectionType);
   for (const line of scene.laneDividers) drawLine(ctx, line);
@@ -509,10 +758,8 @@ function renderFrame(
       const prev    = prevVehicles.get(vehicle.id);
       const x       = prev ? lerp(prev.x, vehicle.x, t) : vehicle.x;
       const y       = prev ? lerp(prev.y, vehicle.y, t) : vehicle.y;
-      const prevH   = vehicleHeadings.get(vehicle.id) ?? vehicle.heading;
-      const heading = lerpAngle(prevH, vehicle.heading, Math.min(1, t * 1.5));
-      vehicleHeadings.set(vehicle.id, heading);
-      nextVehicleState.set(vehicle.id, { x, y });
+      const heading = prev ? lerpAngle(prev.heading, vehicle.heading, Math.min(1, t * 1.5)) : vehicle.heading;
+      nextVehicleState.set(vehicle.id, { x: vehicle.x, y: vehicle.y, heading: vehicle.heading });
       drawVehicle(ctx, vehicle, x, y, heading);
     }
   }
@@ -528,10 +775,6 @@ function renderFrame(
   for (const [k, v] of nextVehicleState) prevVehicles.set(k, v);
   prevPedestrians.clear();
   for (const [k, v] of nextPedState) prevPedestrians.set(k, v);
-  // Prune stale headings
-  for (const id of vehicleHeadings.keys()) {
-    if (!nextVehicleState.has(id)) vehicleHeadings.delete(id);
-  }
 }
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -588,7 +831,6 @@ export function TrafficCanvas({ frameRef, caption, mode = "full" }: Props) {
 
     const prevVehicles    = new Map<string, VehicleState>();
     const prevPedestrians = new Map<string, PedState>();
-    const vehicleHeadings = new Map<string, number>();
     let lastTime = performance.now();
     let rafId = 0;
 
@@ -600,7 +842,7 @@ export function TrafficCanvas({ frameRef, caption, mode = "full" }: Props) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(transform.sx, 0, 0, transform.sy, transform.ox, transform.oy);
-      renderFrame(ctx, frameRef.current, prevVehicles, prevPedestrians, vehicleHeadings, dt);
+      renderFrame(ctx, frameRef.current, prevVehicles, prevPedestrians, dt);
       rafId = requestAnimationFrame(loop);
     };
     rafId = requestAnimationFrame(loop);

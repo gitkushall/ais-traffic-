@@ -154,6 +154,12 @@ export type PedestrianAgentState = {
   waitTimer: number;
   startDelay: number;
   color: string;
+  // Building entry/exit walk
+  buildingEntryX: number;
+  buildingEntryY: number;
+  destEntryX: number;
+  destEntryY: number;
+  buildingWalkProgress: number;
 };
 
 export type ScenarioPreset = "normal" | "rush_hour" | "off_peak" | "event_surge";

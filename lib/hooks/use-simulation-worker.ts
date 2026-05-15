@@ -29,6 +29,10 @@ export function useSimulationWorker() {
       setSnapshot({ dashboard: frame.dashboard, scene: frame.scene });
     });
 
+    worker.addEventListener("error", (event) => {
+      console.error("[SimWorker] crash:", event.message, event.filename, event.lineno);
+    });
+
     return () => {
       worker.terminate();
       workerRef.current = null;

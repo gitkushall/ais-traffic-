@@ -111,6 +111,12 @@ input {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.dashboard-monitor-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .dashboard-monitor-header span {
   color: var(--accent);
   text-transform: uppercase;
@@ -126,6 +132,38 @@ input {
 .dashboard-monitor-scene {
   aspect-ratio: 1 / 1;
   padding: 0;
+}
+
+.monitor-view-switch {
+  display: grid;
+  grid-template-columns: repeat(2, 36px);
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(5, 14, 19, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.monitor-view-switch button {
+  min-width: 0;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.monitor-view-switch button.is-active {
+  background: rgba(89, 211, 194, 0.22);
+  color: var(--text);
+}
+
+.monitor-view-switch button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .dashboard-loading {
@@ -645,6 +683,113 @@ input {
   min-height: 0;
 }
 
+.scene-view-switch {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(2, 42px);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(5, 14, 19, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.scene-view-switch button {
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.74);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.scene-view-switch button.is-active {
+  background: rgba(89, 211, 194, 0.22);
+  color: var(--text);
+}
+
+.scene-view-switch button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.scene-root-3d {
+  background: #102118;
+}
+
+.scene-wrapper-3d canvas {
+  outline: none;
+}
+
+.scene-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  color: var(--muted);
+  background: #102118;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.three-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: min(90%, 460px);
+}
+
+.three-controls span {
+  color: rgba(236, 245, 245, 0.84);
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(5, 14, 19, 0.66);
+  backdrop-filter: blur(12px);
+}
+
+.three-controls button {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(5, 14, 19, 0.66);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
+
+.three-controls button:hover {
+  border-color: rgba(89, 211, 194, 0.35);
+  background: rgba(13, 30, 38, 0.72);
+}
+
+.three-controls button.is-active {
+  border-color: rgba(89, 211, 194, 0.45);
+  background: rgba(89, 211, 194, 0.2);
+  color: #f2fbfa;
+}
+
 .scene-caption {
   position: absolute;
   top: 16px;
@@ -713,6 +858,23 @@ input {
   .scene-wrapper svg {
     height: 100%;
     width: 100%;
+  }
+
+  .three-controls {
+    right: 10px;
+    bottom: 10px;
+    gap: 6px;
+    max-width: calc(100% - 20px);
+  }
+
+  .three-controls span {
+    font-size: 0.62rem;
+    padding: 4px 6px;
+  }
+
+  .three-controls button {
+    padding: 7px 8px;
+    font-size: 0.66rem;
   }
 }
 
@@ -1064,4 +1226,547 @@ input {
   background: rgba(255,255,255,0.08);
   border-color: rgba(255,255,255,0.2);
   color: rgba(255,255,255,0.7);
+}
+
+/* ═══════════════════════════════════════════════════
+   COMMAND CENTER DESIGN SYSTEM
+   ═══════════════════════════════════════════════════ */
+
+/* ── CSS Variables extension ───────────────────── */
+:root {
+  --surface: rgba(255, 255, 255, 0.035);
+  --border: rgba(255, 255, 255, 0.08);
+  --text-primary: var(--text);
+  --text-muted: var(--muted);
+}
+
+/* ── Network Health Ring ──────────────────────── */
+.health-ring-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.health-ring {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  flex-shrink: 0;
+}
+
+.health-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.health-ring-value {
+  font-size: 2.6rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-ring-tone {
+  font-size: 0.63rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.health-ring-footer {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* ── Live Indicator pill ──────────────────────── */
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(88, 196, 114, 0.1);
+  border: 1px solid rgba(88, 196, 114, 0.24);
+  width: fit-content;
+}
+
+.live-indicator > span {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--success);
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+
+.live-indicator.is-paused {
+  background: rgba(247, 184, 75, 0.1);
+  border-color: rgba(247, 184, 75, 0.24);
+}
+.live-indicator.is-paused > span { color: var(--warning); }
+.live-indicator.is-paused .live-dot { background: var(--warning); animation: none; }
+
+.live-indicator.is-stopped,
+.live-indicator.is-stalled {
+  background: rgba(240, 100, 93, 0.1);
+  border-color: rgba(240, 100, 93, 0.24);
+}
+.live-indicator.is-stopped > span,
+.live-indicator.is-stalled > span { color: var(--danger); }
+.live-indicator.is-stopped .live-dot,
+.live-indicator.is-stalled .live-dot { background: var(--danger); animation: none; }
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(88, 196, 114, 0.6); }
+  50% { opacity: 0.75; transform: scale(0.82); box-shadow: 0 0 0 5px rgba(88, 196, 114, 0); }
+}
+
+/* ── Command Hero (full dashboard) ───────────── */
+.command-hero {
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 10% 65%, rgba(89, 211, 194, 0.15), transparent 42%),
+    radial-gradient(circle at 90% 12%, rgba(157, 230, 111, 0.09), transparent 36%),
+    linear-gradient(158deg, rgba(10, 28, 38, 0.99), rgba(6, 16, 25, 0.98));
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.command-hero-inner {
+  display: grid;
+  grid-template-columns: 1fr 230px;
+}
+
+.command-hero-left {
+  padding: 26px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.command-hero-right {
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.2);
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.command-hero-title {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.command-hero-title h1 {
+  font-size: clamp(1.4rem, 2.4vw, 2.05rem);
+  line-height: 1.04;
+  max-width: 18ch;
+  margin: 0;
+}
+
+.command-hero-title p {
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.48;
+  max-width: 54ch;
+  margin: 0;
+}
+
+/* Command stats in hero */
+.command-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.command-stat {
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  display: grid;
+  gap: 3px;
+  transition: border-color 0.2s ease;
+}
+
+.command-stat:hover {
+  border-color: rgba(89, 211, 194, 0.15);
+}
+
+.command-stat-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.command-stat-value {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+.command-stat-sub {
+  font-size: 0.64rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* Hero action row */
+.command-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Vehicle counter pill */
+.vehicle-counter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(89, 211, 194, 0.07);
+  border: 1px solid rgba(89, 211, 194, 0.2);
+  width: fit-content;
+}
+
+.vehicle-counter-num {
+  font-size: 1.1rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.vehicle-counter-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--muted);
+}
+
+/* Phase mini wheel in hero right */
+.phase-mini-wheel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+}
+
+.phase-mini-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.67rem;
+  color: var(--muted);
+  transition: all 0.25s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phase-mini-item.is-active {
+  border-color: rgba(89, 211, 194, 0.32);
+  background: rgba(89, 211, 194, 0.09);
+  color: var(--text);
+}
+
+.phase-mini-dot {
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  transition: all 0.25s ease;
+}
+
+.phase-mini-item.is-active .phase-mini-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(89, 211, 194, 0.7);
+  animation: phaseDotPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes phaseDotPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(89, 211, 194, 0.6); }
+  50% { box-shadow: 0 0 12px rgba(89, 211, 194, 0.9); }
+}
+
+/* ── Compact Command Hero (main page sidebar) ─── */
+.compact-command-hero {
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 5% 55%, rgba(89, 211, 194, 0.10), transparent 38%),
+    linear-gradient(180deg, rgba(11, 28, 38, 0.98), rgba(7, 18, 27, 0.97));
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.compact-command-inner {
+  display: grid;
+  gap: 0;
+}
+
+.compact-command-top {
+  padding: 18px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.compact-command-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compact-command-title-row h2 {
+  font-size: 1.05rem;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.compact-command-title-row p {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+.compact-command-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.compact-command-bottom {
+  padding: 14px 20px;
+  display: grid;
+  grid-template-columns: 1fr 100px;
+  gap: 12px;
+  align-items: center;
+}
+
+.compact-stat-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+}
+
+.compact-stat {
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  display: grid;
+  gap: 2px;
+}
+
+.compact-stat-label {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.compact-stat-value {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+/* Mini health ring (compact) */
+.health-ring-mini {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+}
+
+.health-ring-mini-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.health-ring-mini-value {
+  font-size: 1.3rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-ring-mini-label {
+  font-size: 0.52rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+/* ── Card visual upgrades ──────────────────────── */
+.card {
+  transition: box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.phase-card {
+  background:
+    radial-gradient(circle at 88% 8%, rgba(157, 230, 111, 0.07), transparent 32%),
+    radial-gradient(circle at 8% 92%, rgba(89, 211, 194, 0.05), transparent 30%),
+    linear-gradient(175deg, rgba(14, 34, 44, 0.97), rgba(8, 20, 29, 0.97));
+}
+
+.controls-card {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(89, 211, 194, 0.06), transparent 32%),
+    linear-gradient(180deg, rgba(11, 28, 38, 0.97), rgba(7, 17, 25, 0.97));
+}
+
+.metrics-chart-card {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.07), transparent 42%),
+    linear-gradient(175deg, rgba(12, 30, 40, 0.97), rgba(7, 18, 26, 0.97));
+}
+
+/* Score fill transition */
+.score-fill {
+  transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1), background 0.55s ease;
+}
+
+/* Lane card hover */
+.lane-card {
+  transition: border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.lane-card:hover {
+  border-color: rgba(89, 211, 194, 0.18);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.28);
+}
+
+.lane-card.is-critical {
+  border-color: rgba(240, 100, 93, 0.28);
+  background: linear-gradient(
+    rgba(240, 100, 93, 0.04),
+    rgba(255, 255, 255, 0.02)
+  );
+}
+
+/* ── Selector road previews ────────────────────── */
+.selector-road-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  margin-bottom: 3px;
+  opacity: 0.72;
+  transition: opacity 0.18s;
+}
+
+.selector-button.is-active .selector-road-preview,
+.selector-button:hover .selector-road-preview {
+  opacity: 1;
+}
+
+/* ── Alert strip animation ─────────────────────── */
+.alert-strip.is-alert {
+  animation: alertPulse 2s ease-in-out infinite;
+}
+
+@keyframes alertPulse {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 18px rgba(240, 100, 93, 0.22), inset 0 0 18px rgba(240, 100, 93, 0.05); }
+}
+
+/* ── Metrics chart enhanced sparklines ─────────── */
+.metric-chart-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-chart-block::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+}
+
+/* Served counter badge gradient */
+.hero-badge.vehicles-badge {
+  background: linear-gradient(135deg, rgba(89, 211, 194, 0.16), rgba(157, 230, 111, 0.12));
+  border-color: rgba(89, 211, 194, 0.28);
+  color: #b8f5ef;
+}
+
+/* ── Responsive fixes ──────────────────────────── */
+@media (max-width: 1100px) {
+  .command-hero-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .command-hero-right {
+    flex-direction: row;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    justify-content: space-around;
+    padding: 16px 20px;
+  }
+
+  .compact-command-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .health-ring-mini {
+    display: none;
+  }
 }
